@@ -16,14 +16,6 @@
                 {
                     "system": "http://hl7.org.fhir/sid/us-npi",
                     "value": "9941339108"
-                },
-                {
-                    "system": "http://hl7.org/fhir/sid/us-npi",
-                    "value": "25456"
-                },
-                {
-                    "system": "http://hl7.org/fhir/sid/us-npi",
-                    "value": "9941339100"
                 }
             ],
             "name": [
@@ -65,10 +57,6 @@
                 {
                     "system": "http://hl7.org.fhir/sid/us-npi",
                     "value": "9941339108"
-                },
-                {
-                    "system": "http://hl7.org/fhir/sid/us-npi",
-                    "value": "25456"
                 }
             ],
             "name": [
