@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="java21">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/conformance/metadata-fhirr4-service/target/cache/wso2/MetadataService/2.0.0/java21/wso2-MetadataService-2.0.0.jar!/" />
+      <root url="jar://$PROJECT_DIR$/conformance/metadata-fhirr4-service/target/cache/wso2/MetadataService/2.0.0/java21/resources.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

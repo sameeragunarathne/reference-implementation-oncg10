@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="MetadataService">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/conformance/metadata-fhirr4-service/target/bin/MetadataService.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

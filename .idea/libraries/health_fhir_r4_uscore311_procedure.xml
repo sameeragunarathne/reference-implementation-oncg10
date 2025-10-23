@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="health.fhir.r4.uscore311.procedure">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/procedure/target/bin/health.fhir.r4.uscore311.procedure.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

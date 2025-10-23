@@ -18,7 +18,7 @@
                     "value": "9941339108"
                 },
                 {
-                    "system": "http://www.acme.org/practitioners",
+                    "system": "http://hl7.org/fhir/sid/us-npi",
                     "value": "25456"
                 },
                 {
@@ -67,7 +67,7 @@
                     "value": "9941339108"
                 },
                 {
-                    "system": "http://www.acme.org/practitioners",
+                    "system": "http://hl7.org/fhir/sid/us-npi",
                     "value": "25456"
                 }
             ],

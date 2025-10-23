@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="wso2-SmartConfigService-2.0.0">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/conformance/smart-config-fhirr4-service/target/cache/wso2/SmartConfigService/2.0.0/java21/wso2-SmartConfigService-2.0.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

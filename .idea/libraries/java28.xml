@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="java28">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/goal/target/cache/healthcare/health.fhir.r4.uscore311.goal/1.0.0/java21/resources.jar!/" />
+      <root url="jar://$PROJECT_DIR$/goal/target/cache/healthcare/health.fhir.r4.uscore311.goal/1.0.0/java21/healthcare-health.fhir.r4.uscore311.goal-1.0.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

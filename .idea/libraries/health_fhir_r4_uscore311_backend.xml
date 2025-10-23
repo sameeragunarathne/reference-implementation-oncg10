@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="health.fhir.r4.uscore311.backend">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/backendservice/target/bin/health.fhir.r4.uscore311.backend.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

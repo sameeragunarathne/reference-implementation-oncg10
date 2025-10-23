@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="health.fhir.r4.uscore311.allergyintolerance">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/allergyintolerance/target/bin/health.fhir.r4.uscore311.allergyintolerance.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
