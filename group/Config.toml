@@ -1,0 +1,26 @@
+[searchServerConfig]
+authEnabled = false
+searchUrl = "http://hapi.fhir.org/"
+tokenUrl = ""
+clientId = ""
+clientSecret = ""
+scopes = []
+types = [
+        "Coverage",
+        "Device",
+        "DiagnosticReport",
+        "DocumentReference",
+        "Encounter",
+        "Organization",
+        "Patient",
+        "Practitioner"
+    ]
+
+[exportServiceConfig]
+port = 8081
+baseUrl = "http://localhost:8081"
+targetDirectory = "files"
+contextPath = "baseR4/"
+
+[ballerina.log]
+level = "DEBUG"

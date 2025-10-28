@@ -1,0 +1,8 @@
+[package]
+org = "healthcare"
+name = "health.fhir.r4.group"
+version = "1.0.0"
+distribution = "2201.12.3"
+authors = ["Ballerina"]
+keywords = ["Healthcare", "FHIR", "Group", "r4", "health.fhir.r4.international401"]
+template = true
