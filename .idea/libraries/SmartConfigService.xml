@@ -1,9 +1,0 @@
-<component name="libraryTable">
-  <library name="SmartConfigService">
-    <CLASSES>
-      <root url="jar://$PROJECT_DIR$/conformance/smart-config-fhirr4-service/target/bin/SmartConfigService.jar!/" />
-    </CLASSES>
-    <JAVADOC />
-    <SOURCES />
-  </library>
-</component>

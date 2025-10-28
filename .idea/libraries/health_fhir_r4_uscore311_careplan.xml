@@ -1,9 +1,0 @@
-<component name="libraryTable">
-  <library name="health.fhir.r4.uscore311.careplan">
-    <CLASSES>
-      <root url="jar://$PROJECT_DIR$/careplan/target/bin/health.fhir.r4.uscore311.careplan.jar!/" />
-    </CLASSES>
-    <JAVADOC />
-    <SOURCES />
-  </library>
-</component>
