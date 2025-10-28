@@ -1063,6 +1063,23 @@
                         "valueCode": "unknown"
                     }
                 ]
+            }
+        },
+        {
+            "resourceType": "Observation",
+            "id": "example-dar-unknown",
+            "status": "final",
+            "code": {
+                "coding": [
+                    {
+                        "system": "http://loinc.org",
+                        "code": "8480-6",
+                        "display": "Systolic blood pressure"
+                    }
+                ]
+            },
+            "subject": {
+                "reference": "Patient/1"
             },
             "dataAbsentReason": {
                 "coding": [
