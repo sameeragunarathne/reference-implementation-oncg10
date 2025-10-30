@@ -19,14 +19,6 @@ service / on httpDefaultListener {
         }
     }
 
-    resource function post [string orgId]/[string path]() returns error|json {
-        do {
-        } on fail error err {
-            // handle error
-            return error("unhandled error", err);
-        }
-    }
-
     resource function put [string orgId]/[string path]() returns error|json {
         do {
         } on fail error err {
