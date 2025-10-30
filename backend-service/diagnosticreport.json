@@ -167,8 +167,7 @@
             "presentedForm": [
                 {
                     "contentType": "application/pdf",
-                    "url": "http://example.org/reports/blood-sugar-jane-smith.pdf",
-                    "hash": "XYZ7890"
+                    "url": "https://tourism.gov.in/sites/default/files/2019-04/dummy-pdf_2.pdf"
                 }
             ]
         },
@@ -224,8 +223,7 @@
             "presentedForm": [
                 {
                     "contentType": "application/pdf",
-                    "url": "http://example.org/reports/pft-michael-brown.pdf",
-                    "hash": "PFT56789"
+                    "url": "https://www.rd.usda.gov/sites/default/files/pdf-sample_0.pdf"
                 }
             ]
         },
