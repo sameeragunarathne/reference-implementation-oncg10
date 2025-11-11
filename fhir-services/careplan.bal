@@ -32,11 +32,10 @@ import ballerinax/health.fhir.r4.uscore311;
 public type CarePlan uscore311:USCoreCarePlanProfile;
 
 # A service representing a network-accessible API
-# bound to port `9091`.
-service /fhir/r4 on new fhirr4:Listener(9091, carePlanApiConfig) {
+service /fhir/r4/CarePlan on new fhirr4:Listener(config = carePlanApiConfig) {
 
     // Read the current state of single resource based on its id.
-    isolated resource function get CarePlan/[string id](r4:FHIRContext fhirContext) returns CarePlan|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get [string id](r4:FHIRContext fhirContext) returns CarePlan|r4:OperationOutcome|r4:FHIRError|error {
         lock {
             json[] data = check retrieveData("CarePlan").ensureType();
             foreach json val in data {
@@ -51,7 +50,7 @@ service /fhir/r4 on new fhirr4:Listener(9091, carePlanApiConfig) {
     }
 
     // Read the state of a specific version of a resource based on its id.
-    isolated resource function get CarePlan/[string id]/_history/[string vid](r4:FHIRContext fhirContext) returns CarePlan|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function get [string id]/_history/[string vid](r4:FHIRContext fhirContext) returns CarePlan|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
@@ -66,32 +65,32 @@ service /fhir/r4 on new fhirr4:Listener(9091, carePlanApiConfig) {
     }
 
     // Update the current state of a resource completely.
-    isolated resource function put CarePlan/[string id](r4:FHIRContext fhirContext, CarePlan careplan) returns CarePlan|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function put [string id](r4:FHIRContext fhirContext, CarePlan careplan) returns CarePlan|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Update the current state of a resource partially.
-    isolated resource function patch CarePlan/[string id](r4:FHIRContext fhirContext, json patch) returns CarePlan|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function patch [string id](r4:FHIRContext fhirContext, json patch) returns CarePlan|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Delete a resource.
-    isolated resource function delete CarePlan/[string id](r4:FHIRContext fhirContext) returns r4:OperationOutcome|r4:FHIRError {
+    isolated resource function delete [string id](r4:FHIRContext fhirContext) returns r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Retrieve the update history for a particular resource.
-    isolated resource function get CarePlan/[string id]/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function get [string id]/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Retrieve the update history for all resources.
-    isolated resource function get CarePlan/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function get _history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // post search request
-    isolated resource function post CarePlan/_search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
+    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
         r4:Bundle|error result = filterCarePlanData(fhirContext);
         if result is r4:Bundle {
             http:Response response = new;

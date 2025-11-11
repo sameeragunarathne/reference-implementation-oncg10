@@ -32,11 +32,10 @@ import ballerinax/health.fhir.r4.uscore311;
 public type DocumentReference uscore311:USCoreDocumentReferenceProfile;
 
 # A service representing a network-accessible API
-# bound to port `9096`.
-service /fhir/r4 on new fhirr4:Listener(9096, documentReferenceApiConfig) {
+service /fhir/r4/DocumentReference on new fhirr4:Listener(config = documentReferenceApiConfig) {
 
     // Read the current state of single resource based on its id.
-    isolated resource function get DocumentReference/[string id](r4:FHIRContext fhirContext) returns DocumentReference|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get [string id](r4:FHIRContext fhirContext) returns DocumentReference|r4:OperationOutcome|r4:FHIRError|error {
         lock {
             json[] data = check retrieveData("DocumentReference").ensureType();
             foreach json val in data {
@@ -51,7 +50,7 @@ service /fhir/r4 on new fhirr4:Listener(9096, documentReferenceApiConfig) {
     }
 
     // Read the state of a specific version of a resource based on its id.
-    isolated resource function get DocumentReference/[string id]/_history/[string vid](r4:FHIRContext fhirContext) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function get [string id]/_history/[string vid](r4:FHIRContext fhirContext) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
@@ -66,32 +65,32 @@ service /fhir/r4 on new fhirr4:Listener(9096, documentReferenceApiConfig) {
     }
 
     // Update the current state of a resource completely.
-    isolated resource function put DocumentReference/[string id](r4:FHIRContext fhirContext, DocumentReference documentreference) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function put [string id](r4:FHIRContext fhirContext, DocumentReference documentreference) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Update the current state of a resource partially.
-    isolated resource function patch DocumentReference/[string id](r4:FHIRContext fhirContext, json patch) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function patch [string id](r4:FHIRContext fhirContext, json patch) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Delete a resource.
-    isolated resource function delete DocumentReference/[string id](r4:FHIRContext fhirContext) returns r4:OperationOutcome|r4:FHIRError {
+    isolated resource function delete [string id](r4:FHIRContext fhirContext) returns r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Retrieve the update history for a particular resource.
-    isolated resource function get DocumentReference/[string id]/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function get [string id]/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // Retrieve the update history for all resources.
-    isolated resource function get DocumentReference/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function get _history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // post search request
-    isolated resource function post DocumentReference/_search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
+    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
         r4:Bundle|error result = filterDocumentReferenceData(fhirContext);
         if result is r4:Bundle {
             http:Response response = new;
