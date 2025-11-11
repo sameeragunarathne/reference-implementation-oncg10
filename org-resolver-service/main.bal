@@ -252,7 +252,7 @@ function fetchConfigFromApi(string orgId) returns FhirStoreConfig|error {
 
 function getConfigFromDb(string orgId) returns FhirStoreConfig|error? {
     DbConfigRow|sql:Error rowResult = dbClient->queryRow(`SELECT base_url, token_endpoint, client_id, key_file
-        FROM fhir_config WHERE org_id = ${orgId}`, DbConfigRow);
+        FROM org_mapping WHERE org_id = ${orgId}`, DbConfigRow);
 
     if rowResult is DbConfigRow {
         FhirStoreConfig config = {
@@ -271,14 +271,14 @@ function getConfigFromDb(string orgId) returns FhirStoreConfig|error? {
 }
 
 function upsertConfig(FhirStoreConfig config) returns error? {
-    _ = check dbClient->execute(`INSERT INTO fhir_config (org_id, base_url, token_endpoint, client_id, key_file)
+    _ = check dbClient->execute(`INSERT INTO org_mapping (org_id, base_url, token_endpoint, client_id, key_file)
         VALUES (${config.orgId}, ${config.baseURL}, ${config.tokenEndpoint}, ${config.clientId}, ${config.keyFile})
         ON DUPLICATE KEY UPDATE base_url = VALUES(base_url), token_endpoint = VALUES(token_endpoint),
             client_id = VALUES(client_id), key_file = VALUES(key_file)`);
 }
 
 function initSchema() returns error? {
-    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS fhir_config (
+    _ = check dbClient->execute(`CREATE TABLE IF NOT EXISTS org_mapping (
             org_id VARCHAR(128) PRIMARY KEY,
             base_url TEXT NOT NULL,
             token_endpoint TEXT NOT NULL,
