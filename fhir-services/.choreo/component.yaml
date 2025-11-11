@@ -14,9 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-schemaVersion: 1.2
+schemaVersion: 1.1
 endpoints:
-    - name: fhir-service
+    - name: fhir-svc
       displayName: FHIR Service
       service:
         basePath: /
