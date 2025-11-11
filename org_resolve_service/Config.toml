@@ -1,0 +1,10 @@
+servicePort = 8090
+remoteApiBaseUrl = "https://example.com/integration"
+remoteApiResourcePath = "/resolver/orgs"
+
+dbHost = "localhost"
+dbPort = 3306
+dbUser = "root"
+dbPassword = ""
+dbName = "org_map"
+
