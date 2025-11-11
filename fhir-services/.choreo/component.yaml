@@ -16,13 +16,13 @@
 
 schemaVersion: 1.1
 endpoints:
-    - name: fhir-svc
-      displayName: FHIR Service
-      service:
-        basePath: /
-        port: 9090
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/OpenAPI.yaml
+  - name: fhir-svc
+    displayName: FHIR Service
+    service:
+      basePath: /
+      port: 9090
+    type: REST
+    networkVisibilities:
+      - Project
+      - Public
+    schemaFilePath: oas/OpenAPI.yaml
