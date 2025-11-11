@@ -37,6 +37,10 @@ service /fhir/r4/Procedure on new fhirr4:Listener(config = procedureApiConfig) {
     // Read the current state of single resource based on its id.
     isolated resource function get [string id](r4:FHIRContext fhirContext) returns Procedure|r4:OperationOutcome|r4:FHIRError|error {
         lock {
+            map<string[]>? headerMap = fhirContext.getHTTPRequest()?.headers;
+            if !isValidOrg(fhirContext.getFHIRSecurity()?.jwt, headerMap) {
+                return r4:createFHIRError("Forbidden: Organization mismatch", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_FORBIDDEN);
+            }
             json[] data = check retrieveData("Procedure").ensureType();
             foreach json val in data {
                 map<json> fhirResource = check val.ensureType();
@@ -91,6 +95,10 @@ service /fhir/r4/Procedure on new fhirr4:Listener(config = procedureApiConfig) {
 
     // post search request
     isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
+        map<string[]>? headerMap = fhirContext.getHTTPRequest()?.headers;
+        if !isValidOrg(fhirContext.getFHIRSecurity()?.jwt, headerMap) {
+            return r4:createFHIRError("Forbidden: Organization mismatch", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_FORBIDDEN);
+        }
         r4:Bundle|error result = filterProcedureData(fhirContext);
         if result is r4:Bundle {
             http:Response response = new;

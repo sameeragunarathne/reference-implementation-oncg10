@@ -18,6 +18,8 @@ import ballerina/http;
 
 import ballerinax/health.fhir.r4;
 
+configurable boolean validateOrg = configFHIRServer.validateOrganization ?: false;
+
 isolated function addRevInclude(string revInclude, r4:Bundle bundle, int entryCount, string apiName) returns r4:Bundle|error {
 
     if revInclude == "" {
@@ -73,4 +75,21 @@ isolated function retrieveData(string resourceType) returns json|error {
     } else {
         return error("Failed to retrieve data from backend service");
     }
+}
+
+// Validate organization from JWT and request headers
+isolated function isValidOrg(r4:JWT? jwt, map<string[]>? headers) returns boolean {
+    if !validateOrg {
+        // Organization validation is disabled, allow access
+        return true;
+    }
+    if jwt == () || headers is () {
+        return false;
+    }
+    if !headers.hasKey("x-wso2-organization") {
+        return false;
+    }
+    string resourceOrgName = headers.get("x-wso2-organization")[0];
+    string tokenOrgName = jwt.payload.hasKey("org_name") ? jwt.payload.get("org_name").toString() : "";
+    return tokenOrgName == resourceOrgName;
 }

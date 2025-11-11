@@ -33,6 +33,7 @@ import ballerinax/health.fhir.r4.international401;
 # + format - formats supported (xml | json | ttl | mime type)  
 # + patchFormat - Patch formats supported  
 # + instantiates - URLs of implementation guides that this capability statement is based on
+# + validateOrganization - Whether to validate the organization in the request against the configured organization
 public type ConfigFHIRServer record {|
     string url?;
     string 'version?;
@@ -48,6 +49,7 @@ public type ConfigFHIRServer record {|
     string[] format;
     string[] patchFormat?;
     string[] instantiates?;
+    boolean validateOrganization?;
 |};
 
 # If the endpoint is a RESTful one
