@@ -7,4 +7,3 @@ dbPort = 3306
 dbUser = "root"
 dbPassword = ""
 dbName = "org_map"
-

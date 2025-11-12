@@ -13,46 +13,70 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-import ballerina/ftp;
-import ballerina/io;
+import ballerina/lang.'string as strings;
+import ballerina/log;
 
-// SFTP file monitoring service object
-final ftp:Service sftpService = service object {
-    remote function onFileChange(ftp:WatchEvent & readonly fileEvent, ftp:Caller caller) returns error? {
-        io:println("onFileChange triggered!");
-        io:println(string `Received file event - Added: ${fileEvent.addedFiles.length()}, Deleted: ${fileEvent.deletedFiles.length()}`);
-        check processFileChange(fileEvent, caller);
-    }
-};
-
-// Process file change events
-function processFileChange(ftp:WatchEvent & readonly fileEvent, ftp:Caller caller) returns error? {
-    foreach ftp:FileInfo addedFile in fileEvent.addedFiles {
-        io:println(string `File added: ${addedFile.name} at path: ${addedFile.path}`);
-        
-        // Read file content
-        stream<byte[] & readonly, io:Error?> fileStream = check caller->get(path = addedFile.path);
-        byte[] fileContent = check readFileContent(fileStream);
-        
-        io:println(string `File size: ${fileContent.length()} bytes`);
-        
-        check processCcdaDocument(addedFile.path, fileContent);
-    }
-    
-    foreach string deletedFile in fileEvent.deletedFiles {
-        io:println(string `File deleted: ${deletedFile}`);
-    }
+public function main() returns error? {
+    check startClinicWorkers();
 }
 
-// Read complete file content from stream
-function readFileContent(stream<byte[] & readonly, io:Error?> fileStream) returns byte[]|error {
-    byte[] completeContent = [];
-    
-    check fileStream.forEach(function(byte[] & readonly chunk) {
-        foreach byte byteValue in chunk {
-            completeContent.push(byteValue);
+function startClinicWorkers() returns error? {
+    if monitoredFolders.keys().length() == 0 {
+        log:printWarn("No monitored folders configured for processing. Skipping worker startup.");
+        return;
+    }
+
+    future<error?>[] workerFutures = [];
+
+    foreach string clinicName in monitoredFolders.keys() {
+        string? folderPathOpt = monitoredFolders[clinicName];
+        if folderPathOpt is () {
+            log:printWarn("Missing folder path for clinic. Skipping worker.",
+                properties = {clinicName: clinicName});
+            continue;
         }
-    });
-    
-    return completeContent;
+
+        string sanitizedPath = sanitizeClinicPath(folderPathOpt);
+        if sanitizedPath.length() == 0 {
+            log:printWarn("Empty folder path encountered for clinic. Skipping worker.",
+                properties = {clinicName: clinicName});
+            continue;
+        }
+
+        future<error?> workerFuture = start processClinicWorker(clinicName, sanitizedPath);
+        workerFutures.push(workerFuture);
+        log:printInfo("Started clinic worker.",
+            properties = {clinicName: clinicName, clinicFolderPath: sanitizedPath});
+    }
+
+    if workerFutures.length() == 0 {
+        log:printWarn("No clinic workers were started. Verify monitored folder configuration.");
+        return;
+    }
+
+    foreach future<error?> workerFuture in workerFutures {
+        error? workerOutcome = wait workerFuture;
+        if workerOutcome is error {
+            return workerOutcome;
+        }
+    }
+
+    log:printInfo("All clinic workers completed successfully.",
+        properties = {workerCount: workerFutures.length()});
 }
+
+function processClinicWorker(string clinicName, string clinicFolderPath) returns error? {
+    error? result = processClinicDirectory(clinicName, clinicFolderPath);
+    if result is error {
+        return result;
+    }
+}
+
+function sanitizeClinicPath(string folderPath) returns string {
+    string trimmed = strings:trim(folderPath);
+    if trimmed.length() == 0 {
+        return "";
+    }
+    return ensureLeadingSlash(normalizeDirectoryPath(trimmed));
+}
+

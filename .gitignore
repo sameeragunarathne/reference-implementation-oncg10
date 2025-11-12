@@ -25,3 +25,7 @@ replay_pid*
 
 
 target/
+
+Config.toml
+
+.DS_Store
