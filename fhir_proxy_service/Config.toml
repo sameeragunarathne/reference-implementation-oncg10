@@ -1,0 +1,7 @@
+fhirServerUrl = "https://c32618cf-389d-44f1-93ee-b67a3468aae3-prod.e1-us-east-azure.choreoapis.dev/g10-compliance/fhir-service/v1.0/"
+orgResolverServiceUrl = "http://org-resolver-service-1859390505:8090/resolver/orgs/"
+proxyServerPort = 9090
+publicEndpoints = ["/metadata/.wellknown"]
+
+[ballerina.log]
+level = "DEBUG"
