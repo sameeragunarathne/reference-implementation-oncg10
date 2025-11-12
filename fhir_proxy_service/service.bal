@@ -55,23 +55,43 @@ service / on new http:Listener(proxyServerPort) {
 }
 
 // Validate organization from JWT and request headers
-isolated function isValidOrg(map<string[]> headers, string? orgName, string reqPath) returns boolean {
+function isValidOrg(map<string[]> headers, string? orgName, string reqPath) returns boolean {
 
     log:printDebug(string `Organization validation for org: ${orgName is string ? orgName : "N/A"}, request path: ${reqPath}`);
     string jwt = headers.hasKey(X_JWT_HEADER) ? headers.get(X_JWT_HEADER)[0] : "";
 
-    if jwt == "" && publicEndpoints.indexOf(reqPath) > 0 {
+    if jwt == "" && publicEndpoints.indexOf(reqPath) > -1 {
         // public endpoint, validate using org resolver service and handle logic
-        // todo change this to use dedicated endpoint
-        // check orgResolverClient->/orgName;
-        return true;
+        if orgName is string {
+            do {
+
+                json|error response = orgResolverClient->/[orgName](validate = true);
+
+                // Check if response contains valid: true
+                if response is error {
+                    log:printError(string `Error validating organization ${orgName}`, response);
+                    return false;
+                }
+                boolean|error isValid = response.valid.ensureType();
+                log:printDebug(string `Organization resolver service response for org ${orgName}: response = ${response.toString()}`);
+                return isValid is json ? isValid : false;
+
+            } on fail error e {
+                // Handle error (network issues, service unavailable, etc.)
+                log:printError(string `Error validating organization ${orgName}`, e);
+                return false;
+            }
+        } else {
+            log:printDebug("No organization name provided for validation");
+            return false;
+        }
     }
     if orgName == () || jwt is "" {
         return false;
     }
     [jwt:Header, jwt:Payload]|error [_, payload] = jwt:decode(jwt);
 
-    if payload is jwt:Payload && payload.hasKey(JWT_ORG_NAME_CLAIM) {
+    if payload.hasKey(JWT_ORG_NAME_CLAIM) {
         string tokenOrgName = payload.get(JWT_ORG_NAME_CLAIM).toString();
         log:printDebug(string `Executing token based organization validation.`, tokenOrgName = tokenOrgName, resourceOrgName = orgName);
         return tokenOrgName == orgName;
