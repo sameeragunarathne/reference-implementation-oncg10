@@ -37,10 +37,6 @@ service /fhir/r4/Provenance on new fhirr4:Listener(config = provenanceApiConfig)
     // Read the current state of single resource based on its id.
     isolated resource function get [string id](r4:FHIRContext fhirContext) returns Provenance|r4:OperationOutcome|r4:FHIRError|error {
         lock {
-            map<string[]>? headerMap = fhirContext.getHTTPRequest()?.headers;
-            if !isValidOrg(fhirContext.getFHIRSecurity()?.jwt, headerMap) {
-                return r4:createFHIRError("Forbidden: Organization mismatch", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_FORBIDDEN);
-            }
             json[] data = check retrieveData("Provenance").ensureType();
             foreach json val in data {
                 map<json> fhirResource = check val.ensureType();
