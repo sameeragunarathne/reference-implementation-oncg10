@@ -47,17 +47,45 @@ type DbConfigRow record {|
     string key_file;
 |};
 
+type OrgValidityResponse record {|
+    string orgId;
+    boolean valid;
+|};
+
 function init() returns error? {
     check initSchema();
 }
 
 service /resolver/orgs on httpListener {
 
-    resource function get [string orgId](http:Request req) returns ConfigResponse|http:InternalServerError {
+    resource function get [string orgId](http:Request req)
+            returns ConfigResponse|OrgValidityResponse|http:NotFound|http:InternalServerError {
         boolean forceRefresh = false;
         string? refreshParam = req.getQueryParamValue("refresh");
         if refreshParam is string {
             forceRefresh = strings:toLowerAscii(strings:trim(refreshParam)) == "true";
+        }
+
+        boolean validateOnly = false;
+        string? validateParam = req.getQueryParamValue("validate");
+        if validateParam is string {
+            validateOnly = strings:toLowerAscii(strings:trim(validateParam)) == "true";
+        }
+
+        if validateOnly {
+            FhirStoreConfig|error? existingResult = getConfigFromDb(orgId);
+            if existingResult is error {
+                log:printError(string `Failed to validate organization for org ${orgId}`,
+                    'error = existingResult);
+                return errorResponse("Failed to validate organization");
+            } else if existingResult is () {
+                return notFoundResponse("Organization not found");
+            }
+
+            return {
+                orgId: orgId,
+                valid: true
+            };
         }
 
         FhirStoreConfig|error configResult = getOrFetchConfig(orgId, forceRefresh);
