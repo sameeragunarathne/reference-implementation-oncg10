@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-schemaVersion: 1.1
+schemaVersion: 1.2
 endpoints:
   - name: fhir-service-g10
     displayName: FHIR Service
