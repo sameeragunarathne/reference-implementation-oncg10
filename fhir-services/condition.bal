@@ -50,11 +50,6 @@ service /fhir/r4/Condition on new fhirr4:Listener(config = conditionApiConfig) {
             httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
     }
 
-    // Read the state of a specific version of a resource based on its id.
-    isolated resource function get [string id]/_history/[string vid](r4:FHIRContext fhirContext) returns Condition|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
     // Search for resources based on a set of criteria.
     isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
@@ -62,36 +57,6 @@ service /fhir/r4/Condition on new fhirr4:Listener(config = conditionApiConfig) {
             searchResult = searchResourceBundle(fhirContext, "Condition");
         }
         return searchResult;
-    }
-
-    // Create a new resource.
-    isolated resource function post .(r4:FHIRContext fhirContext, Condition procedure) returns Condition|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Update the current state of a resource completely.
-    isolated resource function put [string id](r4:FHIRContext fhirContext, Condition condition) returns Condition|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Update the current state of a resource partially.
-    isolated resource function patch [string id](r4:FHIRContext fhirContext, json patch) returns Condition|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Delete a resource.
-    isolated resource function delete [string id](r4:FHIRContext fhirContext) returns r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Retrieve the update history for a particular resource.
-    isolated resource function get [string id]/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Retrieve the update history for all resources.
-    isolated resource function get _history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
     // post search request
