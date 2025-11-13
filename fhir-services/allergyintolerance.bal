@@ -23,7 +23,7 @@
 import ballerina/http;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import ballerinax/health.fhir.r4.parser as fhirParser;
+import ballerinax/health.clients.fhir as fhir;
 import ballerinax/health.fhir.r4.uscore311;
 
 # Generic type to wrap all implemented profiles.
@@ -36,17 +36,18 @@ service /fhir/r4/AllergyIntolerance on new fhirr4:Listener(config = allergyIntol
 
     // Read the current state of single resource based on its id.
     isolated resource function get [string id](r4:FHIRContext fhirContext) returns AllergyIntolerance|r4:OperationOutcome|r4:FHIRError|error {
+        anydata|r4:OperationOutcome|r4:FHIRError|error result;
         lock {
-            json[] data = check retrieveData("AllergyIntolerance").ensureType();
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if (fhirResource.resourceType == "AllergyIntolerance" && fhirResource.id == id) {
-                    AllergyIntolerance allergy = check fhirParser:parse(fhirResource, uscore311:USCoreAllergyIntolerance).ensureType();
-                    return allergy.clone();
-                }
-            }
+            result = fetchResourceById(fhirContext, "AllergyIntolerance", id, uscore311:USCoreAllergyIntolerance);
         }
-        return r4:createFHIRError("Not found", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_FOUND);
+        if result is AllergyIntolerance {
+            return result;
+        }
+        if result is r4:OperationOutcome|r4:FHIRError|error {
+            return result;
+        }
+        return r4:createFHIRError("Unexpected resource type returned from FHIR server", r4:ERROR, r4:PROCESSING,
+            httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
     }
 
     // Read the state of a specific version of a resource based on its id.
@@ -56,7 +57,11 @@ service /fhir/r4/AllergyIntolerance on new fhirr4:Listener(config = allergyIntol
 
     // Search for resources based on a set of criteria.
     isolated resource function get AllergyIntolerance(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
-        return filterAllergyIntoleranceData(fhirContext);
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
+        lock {
+            searchResult = searchResourceBundle(fhirContext, "AllergyIntolerance");
+        }
+        return searchResult;
     }
 
     // Create a new resource.
@@ -90,89 +95,13 @@ service /fhir/r4/AllergyIntolerance on new fhirr4:Listener(config = allergyIntol
     }
 
     // post search request
-    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
-        r4:Bundle|error result = filterAllergyIntoleranceData(fhirContext);
-        if result is r4:Bundle {
-            http:Response response = new;
-            response.statusCode = http:STATUS_OK;
-            response.setPayload(result.clone().toJson());
-            return response;
-        } else {
-            return r4:createFHIRError("Internal Server Error", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
+    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
+        lock {
+            searchResult = searchResourceBundle(fhirContext, "AllergyIntolerance", mode = fhir:POST);
         }
+        return searchResult;
     }
 }
 
-isolated function filterAllergyIntoleranceData(r4:FHIRContext fhirContext) returns r4:FHIRError|r4:Bundle|error {
-    boolean isSearchParamAvailable = false;
-    r4:StringSearchParameter[] idParam = check fhirContext.getStringSearchParameter("_id") ?: [];
-    string[] ids = [];
-    foreach r4:StringSearchParameter item in idParam {
-        string id = check item.value.ensureType();
-        ids.push(id);
-    }
-    r4:ReferenceSearchParameter[] patientParam = check fhirContext.getReferenceSearchParameter("patient") ?: [];
-    string[] patients = [];
-    foreach r4:ReferenceSearchParameter item in patientParam {
-        string id = check item.id.ensureType();
-        patients.push("Patient/" + id);
-    }
-    r4:TokenSearchParameter[] revIncludeParam = check fhirContext.getTokenSearchParameter("_revinclude") ?: [];
-    string revInclude = revIncludeParam != [] ? check revIncludeParam[0].code.ensureType() : "";
-    lock {
 
-        r4:Bundle bundle = {identifier: {system: ""}, 'type: "searchset", entry: []};
-        r4:BundleEntry bundleEntry = {};
-        int count = 0;
-
-        json[] data = check retrieveData("AllergyIntolerance").ensureType();
-        // filter by id
-        json[] resultSet = data;
-        if (ids.length() > 0) {
-            resultSet = [];
-            isSearchParamAvailable = true;
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("id") {
-                    string id = check fhirResource.id.ensureType();
-                    if (ids.indexOf(id) > -1) {
-                        resultSet.push(fhirResource);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // filter by patient
-        json[] patientFilteredData = [];
-        if (patients.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("patient") {
-                    map<json> patient = check fhirResource.patient.ensureType();
-                    if patient.hasKey("reference") {
-                        string patientRef = check patient.reference.ensureType();
-                        if (patients.indexOf(patientRef) > -1) {
-                            patientFilteredData.push(fhirResource);
-                            continue;
-                        }
-                    }
-                }
-            }
-            resultSet = patientFilteredData;
-        }
-
-        resultSet = isSearchParamAvailable ? resultSet : data;
-        foreach json item in resultSet {
-            bundleEntry = {fullUrl: "", 'resource: item};
-            bundle.entry[count] = bundleEntry;
-            count += 1;
-        }
-
-        if bundle.entry != [] {
-            return addRevInclude(revInclude, bundle, count, "AllergyIntolerance").clone();
-        }
-        return bundle.clone();
-    }
-}

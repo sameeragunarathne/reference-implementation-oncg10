@@ -33,9 +33,11 @@ type SmartConfigInternalServerError record {|
 ## The service representing well known API
 final readonly & SmartConfiguration smartConfiguration = check generateSmartConfiguration().cloneReadOnly();
 
+listener http:Listener httpListener = http:getDefaultListener();
+
 # The service representing well known API
 # Bound to port defined by configs
-service /fhir/r4/\.well\-known on new http:Listener(9201) {
+service /fhir/r4/\.well\-known on httpListener {
     
     # The authorization endpoints accepted by a FHIR resource server are exposed as a Well-Known Uniform Resource Identifiers (URIs) (RFC5785) JSON document.
     # Reference: https://build.fhir.org/ig/HL7/smart-app-launch/conformance.html#using-well-known

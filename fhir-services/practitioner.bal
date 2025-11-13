@@ -23,7 +23,7 @@
 import ballerina/http;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import ballerinax/health.fhir.r4.parser as fhirParser;
+import ballerinax/health.clients.fhir as fhir;
 import ballerinax/health.fhir.r4.uscore311;
 
 # Generic type to wrap all implemented profiles.
@@ -36,17 +36,18 @@ service /fhir/r4/Practitioner on new fhirr4:Listener(config = practitionerApiCon
 
     // Read the current state of single resource based on its id.
     isolated resource function get [string id](r4:FHIRContext fhirContext) returns Practitioner|r4:OperationOutcome|r4:FHIRError|error {
+        anydata|r4:OperationOutcome|r4:FHIRError|error result;
         lock {
-            json[] data = check retrieveData("Practitioner").ensureType();
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if (fhirResource.resourceType == "Practitioner" && fhirResource.id == id) {
-                    Practitioner practitioner = check fhirParser:parse(fhirResource, uscore311:USCorePractitionerProfile).ensureType();
-                    return practitioner.clone();
-                }
-            }
+            result = fetchResourceById(fhirContext, "Practitioner", id, uscore311:USCorePractitionerProfile);
         }
-        return r4:createFHIRError("Not found", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_FOUND);
+        if result is Practitioner {
+            return result;
+        }
+        if result is r4:OperationOutcome|r4:FHIRError|error {
+            return result;
+        }
+        return r4:createFHIRError("Unexpected resource type returned from FHIR server", r4:ERROR, r4:PROCESSING,
+            httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
     }
 
     // Read the state of a specific version of a resource based on its id.
@@ -56,9 +57,11 @@ service /fhir/r4/Practitioner on new fhirr4:Listener(config = practitionerApiCon
 
     // Search for resources based on a set of criteria.
     isolated resource function get Practitioner(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
-            return filterPractitionerData(fhirContext);
+            searchResult = searchResourceBundle(fhirContext, "Practitioner");
         }
+        return searchResult;
     }
 
     // Create a new resource.
@@ -92,120 +95,12 @@ service /fhir/r4/Practitioner on new fhirr4:Listener(config = practitionerApiCon
     }
 
     // post search request
-    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
-        r4:Bundle|error result = filterPractitionerData(fhirContext);
-        if result is r4:Bundle {
-            http:Response response = new;
-            response.statusCode = http:STATUS_OK;
-            response.setPayload(result.clone().toJson());
-            return response;
-        } else {
-            return r4:createFHIRError("Internal Server Error", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
+    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
+        lock {
+            searchResult = searchResourceBundle(fhirContext, "Practitioner", mode = fhir:POST);
         }
+        return searchResult;
     }
 }
 
-isolated function filterPractitionerData(r4:FHIRContext fhirContext) returns r4:Bundle|error {
-
-    boolean isSearchParamAvailable = false;
-    r4:StringSearchParameter[] idParam = check fhirContext.getStringSearchParameter("_id") ?: [];
-    r4:TokenSearchParameter[] identifierParam = check fhirContext.getTokenSearchParameter("identifier") ?: [];
-    r4:StringSearchParameter[] nameParam = check fhirContext.getStringSearchParameter("name") ?: [];
-
-    string[] ids = [];
-    foreach r4:StringSearchParameter item in idParam {
-        string id = check item.value.ensureType();
-        ids.push(id);
-    }
-    string[] identifiers = [];
-    foreach r4:TokenSearchParameter item in identifierParam {
-        string identifier = check item.code.ensureType();
-        identifiers.push(identifier);
-    }
-    string[] names = [];
-    foreach r4:StringSearchParameter item in nameParam {
-        string name = check item.value.ensureType();
-        names.push(name);
-    }
-
-    r4:TokenSearchParameter[] revIncludeParam = check fhirContext.getTokenSearchParameter("_revinclude") ?: [];
-    string revInclude = revIncludeParam != [] ? check revIncludeParam[0].code.ensureType() : "";
-    lock {
-
-        r4:Bundle bundle = {identifier: {system: ""}, 'type: "searchset", entry: []};
-        r4:BundleEntry bundleEntry = {};
-        int count = 0;
-        // filter by id
-        json[] data = check retrieveData("Practitioner").ensureType();
-        json[] resultSet = data;
-        if (ids.length() > 0) {
-            isSearchParamAvailable = true;
-            resultSet = [];
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("id") {
-                    string id = check fhirResource.id.ensureType();
-                    if (ids.indexOf(id) > -1) {
-                        resultSet.push(fhirResource);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // filter by name
-        json[] nameFilteredData = [];
-        if (names.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("name") {
-                    json[] nameResources = check fhirResource.name.ensureType();
-                    foreach json nameResource in nameResources {
-                        map<json> nameObject = check nameResource.ensureType();
-                        string family = check nameObject.family.ensureType();
-                        if (names.indexOf(family) > -1) {
-                            nameFilteredData.push(fhirResource);
-                            continue;
-                        }
-                        
-                    }
-                }
-            }
-            resultSet = nameFilteredData;
-        }
-
-        // filter by identifier
-        json[] identifierFilteredData = [];
-        if (identifiers.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("identifier") {
-                    json[] identifierResources = check fhirResource.identifier.ensureType();
-                    foreach json identifierResource in identifierResources {
-                        map<json> identifierObject = check identifierResource.ensureType();
-                        string value = check identifierObject.value.ensureType();
-                        if (identifiers.indexOf(value) > -1) {
-                            identifierFilteredData.push(fhirResource);
-                            continue;
-                        }
-                    }
-                }
-            }
-            resultSet = identifierFilteredData;
-        }
-
-        resultSet = isSearchParamAvailable ? resultSet : data;
-        foreach json item in resultSet {
-            bundleEntry = {fullUrl: "", 'resource: item};
-            bundle.entry[count] = bundleEntry;
-            count += 1;
-        }
-
-        if bundle.entry != [] {
-            return addRevInclude(revInclude, bundle, count, "Practitioner").clone();
-        }
-        return bundle.clone();
-    }
-}
