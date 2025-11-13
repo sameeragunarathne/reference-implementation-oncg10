@@ -25,7 +25,7 @@ import ballerinax/health.clients.fhir as fhir;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhir.r4.parser as fhirParser;
 
-configurable map<ClinicFhirConnectorConfig> clinicFhirConfigs = {};
+configurable ClinicFhirConnectorConfig clinicOrgConfig = ?;
 configurable string clinicHeaderName = "x-clinic-name";
 
 isolated map<fhir:FHIRConnector> fhirConnectorCache = {};
@@ -139,12 +139,7 @@ isolated function materializeKeyFile(string clinicName, string keyContent, strin
 }
 
 isolated function getClinicResolverConfig(string clinicName) returns ClinicFhirConnectorConfig|error {
-    ClinicFhirConnectorConfig? configOpt = clinicFhirConfigs[clinicName];
-    if configOpt is () {
-        return error(string `No resolver configuration found for clinic ${clinicName}`);
-    }
-
-    ClinicFhirConnectorConfig config = configOpt;
+    ClinicFhirConnectorConfig config = clinicOrgConfig;
     string normalizedBase = strings:trim(config.resolverBaseUrl);
     if normalizedBase.length() == 0 {
         return error(string `Resolver base URL is empty for clinic ${clinicName}`);
