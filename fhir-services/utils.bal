@@ -409,7 +409,7 @@ public isolated function searchResourceBundle(r4:FHIRContext fhirContext, string
         if payloadOrError is r4:FHIRError {
             return payloadOrError;
         }
-        r4:Bundle bundle = check fhirParser:parse(payloadOrError, r4:Bundle).ensureType();
+        r4:Bundle bundle = check fhirParser:parse(payloadOrError).ensureType();
         return bundle.clone();
     }
 

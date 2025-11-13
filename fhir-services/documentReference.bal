@@ -56,7 +56,7 @@ service /fhir/r4/DocumentReference on new fhirr4:Listener(config = documentRefer
     }
 
     // Search for resources based on a set of criteria.
-    isolated resource function get DocumentReference(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
             searchResult = searchResourceBundle(fhirContext, "DocumentReference");
@@ -65,7 +65,7 @@ service /fhir/r4/DocumentReference on new fhirr4:Listener(config = documentRefer
     }
 
     // Create a new resource.
-    isolated resource function post DocumentReference(r4:FHIRContext fhirContext, DocumentReference procedure) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function post .(r4:FHIRContext fhirContext, DocumentReference procedure) returns DocumentReference|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
