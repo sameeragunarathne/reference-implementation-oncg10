@@ -23,7 +23,7 @@
 import ballerina/http;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import ballerinax/health.fhir.r4.parser as fhirParser;
+import ballerinax/health.clients.fhir as fhir;
 import ballerinax/health.fhir.r4.uscore311;
 
 # Generic type to wrap all implemented profiles.
@@ -36,17 +36,18 @@ service /fhir/r4/DocumentReference on new fhirr4:Listener(config = documentRefer
 
     // Read the current state of single resource based on its id.
     isolated resource function get [string id](r4:FHIRContext fhirContext) returns DocumentReference|r4:OperationOutcome|r4:FHIRError|error {
+        anydata|r4:OperationOutcome|r4:FHIRError|error result;
         lock {
-            json[] data = check retrieveData("DocumentReference").ensureType();
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if (fhirResource.resourceType == "DocumentReference" && fhirResource.id == id) {
-                    DocumentReference documentReference = check fhirParser:parse(fhirResource, uscore311:USCoreDocumentReferenceProfile).ensureType();
-                    return documentReference.clone();
-                }
-            }
+            result = fetchResourceById(fhirContext, "DocumentReference", id, uscore311:USCoreDocumentReferenceProfile);
         }
-        return r4:createFHIRError("Not found", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_FOUND);
+        if result is DocumentReference {
+            return result;
+        }
+        if result is r4:OperationOutcome|r4:FHIRError|error {
+            return result;
+        }
+        return r4:createFHIRError("Unexpected resource type returned from FHIR server", r4:ERROR, r4:PROCESSING,
+            httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
     }
 
     // Read the state of a specific version of a resource based on its id.
@@ -56,7 +57,11 @@ service /fhir/r4/DocumentReference on new fhirr4:Listener(config = documentRefer
 
     // Search for resources based on a set of criteria.
     isolated resource function get DocumentReference(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
-        return filterDocumentReferenceData(fhirContext);
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
+        lock {
+            searchResult = searchResourceBundle(fhirContext, "DocumentReference");
+        }
+        return searchResult;
     }
 
     // Create a new resource.
@@ -90,181 +95,13 @@ service /fhir/r4/DocumentReference on new fhirr4:Listener(config = documentRefer
     }
 
     // post search request
-    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:FHIRError|http:Response {
-        r4:Bundle|error result = filterDocumentReferenceData(fhirContext);
-        if result is r4:Bundle {
-            http:Response response = new;
-            response.statusCode = http:STATUS_OK;
-            response.setPayload(result.clone().toJson());
-            return response;
-        } else {
-            return r4:createFHIRError("Internal Server Error", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
+    isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
+        lock {
+            searchResult = searchResourceBundle(fhirContext, "DocumentReference", mode = fhir:POST);
         }
+        return searchResult;
     }
 }
 
-isolated function filterDocumentReferenceData(r4:FHIRContext fhirContext) returns r4:FHIRError|r4:Bundle|error {
-    boolean isSearchParamAvailable = false;
-    r4:StringSearchParameter[] idParam = check fhirContext.getStringSearchParameter("_id") ?: [];
-    string[] ids = [];
-    foreach r4:StringSearchParameter item in idParam {
-        string id = check item.value.ensureType();
-        ids.push(id);
-    }
-    r4:TokenSearchParameter[] statusParam = check fhirContext.getTokenSearchParameter("status") ?: [];
-    string[] statuses = [];
-    foreach r4:TokenSearchParameter item in statusParam {
-        string id = check item.code.ensureType();
-        statuses.push(id);
-    }
-    r4:TokenSearchParameter[] categoryParam = check fhirContext.getTokenSearchParameter("category") ?: [];
-    string[] categories = [];
-    foreach r4:TokenSearchParameter item in categoryParam {
-        string id = check item.code.ensureType();
-        categories.push(id);
-    }
-    r4:ReferenceSearchParameter[] patientParam = check fhirContext.getReferenceSearchParameter("patient") ?: [];
-    string[] patients = [];
-    foreach r4:ReferenceSearchParameter item in patientParam {
-        string id = check item.id.ensureType();
-        patients.push("Patient/" + id);
-    }
-    r4:TokenSearchParameter[] typeParam = check fhirContext.getTokenSearchParameter("type") ?: [];
-    string[] types = [];
-    foreach r4:TokenSearchParameter item in typeParam {
-        string id = check item.code.ensureType();
-        types.push(id);
-    }
-    r4:TokenSearchParameter[] revIncludeParam = check fhirContext.getTokenSearchParameter("_revinclude") ?: [];
-    string revInclude = revIncludeParam != [] ? check revIncludeParam[0].code.ensureType() : "";
-    lock {
 
-        r4:Bundle bundle = {identifier: {system: ""}, 'type: "searchset", entry: []};
-        r4:BundleEntry bundleEntry = {};
-        int count = 0;
-        json[] data = check retrieveData("DocumentReference").ensureType();
-        // filter by id
-        json[] resultSet = data;
-        if (ids.length() > 0) {
-            resultSet = [];
-            isSearchParamAvailable = true;
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("id") {
-                    string id = check fhirResource.id.ensureType();
-                    if (fhirResource.resourceType == "DocumentReference" && ids.indexOf(id) > -1) {
-                        resultSet.push(fhirResource);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // filter by patient
-        json[] patientFilteredData = [];
-        if (patients.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("subject") {
-                    map<json> patient = check fhirResource.subject.ensureType();
-                    if patient.hasKey("reference") {
-                        string patientRef = check patient.reference.ensureType();
-                        if (patients.indexOf(patientRef) > -1) {
-                            patientFilteredData.push(fhirResource);
-                            continue;
-                        }
-                    }
-                }
-            }
-            resultSet = patientFilteredData;
-        }
-
-        // filter by type
-        json[] typeFilteredData = [];
-        if (types.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("type") {
-                    map<json> 'type = check fhirResource.'type.ensureType();
-                    if 'type.hasKey("coding") {
-                        json[] coding = check 'type.coding.ensureType();
-                        foreach json codingItem in coding {
-                            map<json> codingResource = check codingItem.ensureType();
-                            if codingResource.hasKey("code") {
-                                string code = check codingResource.code.ensureType();
-                                if (types.indexOf(code) > -1) {
-                                    typeFilteredData.push(fhirResource);
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            resultSet = typeFilteredData;
-        }
-
-        // filter by category
-        json[] categoryFilteredData = [];
-        if (categories.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("category") {
-                    json[] categoryResources = check fhirResource.category.ensureType();
-                    foreach json category in categoryResources {
-                        map<json> categoryResource = check category.ensureType();
-                        if categoryResource.hasKey("coding") {
-                            json[] coding = check categoryResource.coding.ensureType();
-                            foreach json codingItem in coding {
-                                map<json> codingResource = check codingItem.ensureType();
-                                if codingResource.hasKey("code") {
-                                    string code = check codingResource.code.ensureType();
-                                    if (categories.indexOf(code) > -1) {
-                                        categoryFilteredData.push(fhirResource);
-                                        continue;
-                                    }
-                                }
-
-                            }
-                        }
-                    }
-                }
-            }
-            resultSet = categoryFilteredData;
-        }
-
-        // filter by status
-        json[] statusFilteredData = [];
-        if (statuses.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in resultSet {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("status") {
-                    string status = check fhirResource.status.ensureType();
-
-                    if (statuses.indexOf(status) > -1) {
-                        statusFilteredData.push(fhirResource);
-                        continue;
-                    }
-                }
-            }
-            resultSet = statusFilteredData;
-        }
-
-        resultSet = isSearchParamAvailable ? resultSet : data;
-        foreach json item in resultSet {
-            bundleEntry = {fullUrl: "", 'resource: item};
-            bundle.entry[count] = bundleEntry;
-            count += 1;
-        }
-
-        if bundle.entry != [] {
-            return addRevInclude(revInclude, bundle, count, "DocumentReference").clone();
-        }
-        return bundle.clone();
-    }
-
-}
