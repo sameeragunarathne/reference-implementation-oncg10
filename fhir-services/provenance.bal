@@ -55,7 +55,7 @@ service /fhir/r4/Provenance on new fhirr4:Listener(config = provenanceApiConfig)
     }
 
     // Search for resources based on a set of criteria.
-    isolated resource function get Provenance(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
             searchResult = searchResourceBundle(fhirContext, "Provenance");
@@ -64,7 +64,7 @@ service /fhir/r4/Provenance on new fhirr4:Listener(config = provenanceApiConfig)
     }
 
     // Create a new resource.
-    isolated resource function post Provenance(r4:FHIRContext fhirContext, Provenance procedure) returns Provenance|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function post .(r4:FHIRContext fhirContext, Provenance procedure) returns Provenance|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 

@@ -56,7 +56,7 @@ service /fhir/r4/Device on new fhirr4:Listener(config = deviceApiConfig) {
     }
 
     // Search for resources based on a set of criteria.
-    isolated resource function get Device(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
             searchResult = searchResourceBundle(fhirContext, "Device");
@@ -65,7 +65,7 @@ service /fhir/r4/Device on new fhirr4:Listener(config = deviceApiConfig) {
     }
 
     // Create a new resource.
-    isolated resource function post Device(r4:FHIRContext fhirContext, Device procedure) returns Device|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function post .(r4:FHIRContext fhirContext, Device procedure) returns Device|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 

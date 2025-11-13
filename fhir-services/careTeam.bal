@@ -56,7 +56,7 @@ service /fhir/r4/CareTeam on new fhirr4:Listener(config = careTeamApiConfig) {
     }
 
     // Search for resources based on a set of criteria.
-    isolated resource function get CareTeam(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
             searchResult = searchResourceBundle(fhirContext, "CareTeam");
@@ -65,7 +65,7 @@ service /fhir/r4/CareTeam on new fhirr4:Listener(config = careTeamApiConfig) {
     }
 
     // Create a new resource.
-    isolated resource function post CareTeam(r4:FHIRContext fhirContext, CareTeam procedure) returns CareTeam|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function post .(r4:FHIRContext fhirContext, CareTeam procedure) returns CareTeam|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 

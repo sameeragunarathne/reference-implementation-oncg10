@@ -57,7 +57,7 @@ service /fhir/r4/DiagnosticReport on new fhirr4:Listener(config = diagnosticRepo
     }
 
     // Search for resources based on a set of criteria.
-    isolated resource function get DiagnosticReport(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
             searchResult = searchResourceBundle(fhirContext, "DiagnosticReport");
@@ -66,7 +66,7 @@ service /fhir/r4/DiagnosticReport on new fhirr4:Listener(config = diagnosticRepo
     }
 
     // Create a new resource.
-    isolated resource function post DiagnosticReport(r4:FHIRContext fhirContext, DiagnosticReport procedure) returns DiagnosticReport|r4:OperationOutcome|r4:FHIRError {
+    isolated resource function post .(r4:FHIRContext fhirContext, DiagnosticReport procedure) returns DiagnosticReport|r4:OperationOutcome|r4:FHIRError {
         return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
     }
 
