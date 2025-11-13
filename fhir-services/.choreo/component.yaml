@@ -16,7 +16,7 @@
 
 schemaVersion: 1.1
 endpoints:
-  - name: fhir-svc
+  - name: fhir-service-g10
     displayName: FHIR Service
     service:
       basePath: /
