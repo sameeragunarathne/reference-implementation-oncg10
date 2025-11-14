@@ -3441,7 +3441,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SMARTConfiguration'
+                type: object
       security:
       - default: []
       x-auth-type: Application & Application User
@@ -3456,7 +3456,7 @@ paths:
           content:
             application/fhir+json:
               schema:
-                $ref: '#/components/schemas/CapabilityStatement'
+                type: object
       security:
       - default: []
       x-auth-type: Application & Application User
