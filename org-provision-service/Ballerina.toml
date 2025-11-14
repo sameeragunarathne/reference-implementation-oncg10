@@ -1,0 +1,7 @@
+[package]
+org = "healthcare"
+name = "org.provisioning.service"
+version = "1.0.0"
+
+[build-options]
+observabilityIncluded = true
