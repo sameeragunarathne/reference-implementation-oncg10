@@ -3431,6 +3431,36 @@ paths:
       - default: []
       x-auth-type: Application & Application User
 
+  /fhir/r4/.well-known/smart-configuration:
+    get:
+      tags:
+      - .well-known
+      responses:
+        "200":
+          description: SMART configuration retrieval successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SMARTConfiguration'
+      security:
+      - default: []
+      x-auth-type: Application & Application User
+  
+  /fhir/r4/metadata:
+    get:
+      tags:
+      - metadata
+      responses:
+        "200":
+          description: CapabilityStatement retrieval successful
+          content:
+            application/fhir+json:
+              schema:
+                $ref: '#/components/schemas/CapabilityStatement'
+      security:
+      - default: []
+      x-auth-type: Application & Application User
+
 components:
   schemas:
     Resource:
