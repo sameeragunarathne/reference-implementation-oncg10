@@ -66,15 +66,17 @@ function extractHeaders(http:Request httpRequest) returns map<string[]> {
 // Validate organization from JWT and request headers
 function isValidOrg(map<string[]> headers, string? orgName, string reqPath) returns boolean {
     string orgNameStr = orgName ?: "N/A";
-    log:printDebug(string `Organization validation for org: ${orgNameStr}, request path: ${reqPath}`);
+    log:printDebug(string `Organization validation for org: ${orgNameStr}, request path: ${reqPath}, headers: ${headers.toString()}`);
 
     string jwt = headers.hasKey(X_JWT_HEADER) ? headers.get(X_JWT_HEADER)[0] : "";
 
     if jwt == "" && publicEndpoints.indexOf(reqPath) > -1 {
+        log:printDebug("Public endpoint accessed, validating organization with resolver.");
         return validateOrgWithResolver(orgName);
     }
 
     if orgName is () || jwt == "" {
+        log:printDebug("Missing organization name or JWT token.");
         return false;
     }
 
