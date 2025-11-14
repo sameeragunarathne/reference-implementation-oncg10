@@ -31,27 +31,27 @@ type OrgResolverResponse record {|
 
 service / on new http:Listener(proxyServerPort) {
 
-    resource function post [string orgName]/oauth2/token(http:Request httpRequest) returns http:Response|error {
-        json payload = check httpRequest.getJsonPayload();
-        map<string[]> headers = extractHeaders(httpRequest);
-        http:Response|http:ClientError res = asgClient->post("oauth2/token", payload, headers);
-        if res is http:Response {
-
-            log:printDebug("Modifying response payload in policyNameOut mediation policy");
-            map<json> resPayload = check res.getJsonPayload().ensureType();
-            resPayload["smart_style_url"] = "https://api.jsonbin.io/v3/qs/68f9f197ae596e708f25eeaa";
-            resPayload["need_patient_banner"] = false;
-            resPayload["patient"] = "b1abc7e8-6a50-40d5-9221-143ccb0f3ab1";
-            res.setJsonPayload(resPayload);
-        }
-        return res;
-    }
-
     resource function get [string orgName]/[string... path](http:Request httpRequest) returns http:Response|error {
         return handleRequest(httpRequest, orgName, path, "GET");
     }
 
     resource function post [string orgName]/[string... path](http:Request httpRequest) returns http:Response|error {
+        if path[path.length() - 1] == "token" {
+            // Redirect to ASG token endpoint
+            json payload = check httpRequest.getJsonPayload();
+            map<string[]> headers = extractHeaders(httpRequest);
+            http:Response|http:ClientError res = asgClient->post("oauth2/token", payload, headers);
+            if res is http:Response {
+
+                log:printDebug("Modifying response payload in policyNameOut mediation policy");
+                map<json> resPayload = check res.getJsonPayload().ensureType();
+                resPayload["smart_style_url"] = "https://api.jsonbin.io/v3/qs/68f9f197ae596e708f25eeaa";
+                resPayload["need_patient_banner"] = false;
+                resPayload["patient"] = "b1abc7e8-6a50-40d5-9221-143ccb0f3ab1";
+                res.setJsonPayload(resPayload);
+            }
+            return res;
+        }
         return handleRequest(httpRequest, orgName, path, "POST");
     }
 
