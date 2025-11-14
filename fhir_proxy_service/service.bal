@@ -45,9 +45,9 @@ service / on new http:Listener(proxyServerPort) {
 
                 log:printDebug("Modifying response payload in policyNameOut mediation policy");
                 map<json> resPayload = check res.getJsonPayload().ensureType();
-                resPayload["smart_style_url"] = "https://api.jsonbin.io/v3/qs/68f9f197ae596e708f25eeaa";
-                resPayload["need_patient_banner"] = false;
-                resPayload["patient"] = "b1abc7e8-6a50-40d5-9221-143ccb0f3ab1";
+                resPayload["smart_style_url"] = smart_style_url;
+                resPayload["need_patient_banner"] = need_patient_banner;
+                resPayload["patient"] = patient_id;
                 res.setJsonPayload(resPayload);
             }
             return res;

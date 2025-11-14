@@ -24,3 +24,7 @@ configurable string asgServerUrl = "";
 configurable string orgResolverServiceUrl = "";
 configurable int proxyServerPort = 9090;
 configurable string[] publicEndpoints = [];
+
+configurable string smart_style_url = "";
+configurable boolean need_patient_banner = false;
+configurable string patient_id = "";
