@@ -15,6 +15,7 @@
 // under the License.
 
 const X_JWT_HEADER = "x-jwt-assertion";
+const AUTHORIZATION_HEADER = "authorization";
 const X_ORG_HEADER = "x-clinic-name";
 const JWT_ORG_NAME_CLAIM = "org_name";
 
