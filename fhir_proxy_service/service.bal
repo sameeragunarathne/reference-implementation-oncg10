@@ -38,10 +38,10 @@ service / on new http:Listener(proxyServerPort) {
     resource function post [string orgName]/[string... path](http:Request httpRequest) returns http:Response|error {
         if path[path.length() - 1] == "token" {
             // Redirect to ASG token endpoint
-            json payload = check httpRequest.getJsonPayload();
+            string payload = check httpRequest.getTextPayload();
             map<string[]> headers = extractHeaders(httpRequest);
             http:Response|http:ClientError res = asgClient->post("oauth2/token", payload, headers);
-            if res is http:Response {
+            if res is http:Response && res.statusCode == 200 {
 
                 log:printDebug("Modifying response payload in policyNameOut mediation policy");
                 map<json> resPayload = check res.getJsonPayload().ensureType();
