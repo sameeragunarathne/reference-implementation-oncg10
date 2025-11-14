@@ -29,18 +29,18 @@ import ballerinax/health.fhir.r4.uscore311;
 # Generic type to wrap all implemented profiles.
 # Add required profile types here.
 # public type Medication r4:Medication|<other_Medication_Profile>;
-public type Medication uscore311:USCoreMedicationProfile;
+public type MedicationRequest uscore311:USCoreMedicationProfile;
 
 # A service representing a network-accessible API
-service /fhir/r4/Medication on new fhirr4:Listener(config = medicationApiConfig) {
+service /fhir/r4/MedicationRequest on new fhirr4:Listener(config = medicationApiConfig) {
 
     // Read the current state of single resource based on its id.
-    isolated resource function get [string id](r4:FHIRContext fhirContext) returns Medication|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get [string id](r4:FHIRContext fhirContext) returns MedicationRequest|r4:OperationOutcome|r4:FHIRError|error {
         anydata|r4:OperationOutcome|r4:FHIRError|error result;
         lock {
-            result = fetchResourceById(fhirContext, "Medication", id, uscore311:USCoreMedicationProfile);
+            result = fetchResourceById(fhirContext, "MedicationRequest", id, uscore311:USCoreMedicationProfile);
         }
-        if result is Medication {
+        if result is MedicationRequest {
             return result;
         }
         if result is r4:OperationOutcome|r4:FHIRError|error {
@@ -54,7 +54,7 @@ service /fhir/r4/Medication on new fhirr4:Listener(config = medicationApiConfig)
     isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
-            searchResult = searchResourceBundle(fhirContext, "Medication");
+            searchResult = searchResourceBundle(fhirContext, "MedicationRequest");
         }
         return searchResult;
     }
@@ -63,7 +63,7 @@ service /fhir/r4/Medication on new fhirr4:Listener(config = medicationApiConfig)
     isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
-            searchResult = searchResourceBundle(fhirContext, "Medication", mode = fhir:POST);
+            searchResult = searchResourceBundle(fhirContext, "MedicationRequest", mode = fhir:POST);
         }
         return searchResult;
     }
