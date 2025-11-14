@@ -69,6 +69,12 @@ function isValidOrg(map<string[]> headers, string? orgName, string reqPath) retu
     log:printDebug(string `Organization validation for org: ${orgNameStr}, request path: ${reqPath}, headers: ${headers.toString()}`);
 
     string jwt = headers.hasKey(X_JWT_HEADER) ? headers.get(X_JWT_HEADER)[0] : "";
+    if jwt == "" && headers.hasKey(AUTHORIZATION_HEADER) {
+        string authHeader = headers.get(AUTHORIZATION_HEADER)[0];
+        if authHeader.startsWith("Bearer ") {
+            jwt = authHeader.substring(7);
+        }
+    }
 
     if jwt == "" && publicEndpoints.indexOf(reqPath) > -1 {
         log:printDebug("Public endpoint accessed, validating organization with resolver.");
