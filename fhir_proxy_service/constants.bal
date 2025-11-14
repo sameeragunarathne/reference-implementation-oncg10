@@ -20,6 +20,7 @@ const X_ORG_HEADER = "x-clinic-name";
 const JWT_ORG_NAME_CLAIM = "org_name";
 
 configurable string fhirServerUrl = "";
+configurable string asgServerUrl = "";
 configurable string orgResolverServiceUrl = "";
 configurable int proxyServerPort = 9090;
 configurable string[] publicEndpoints = [];
