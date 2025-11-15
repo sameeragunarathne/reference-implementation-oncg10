@@ -23,7 +23,6 @@
 import ballerina/http;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import ballerinax/health.clients.fhir as fhir;
 import ballerinax/health.fhir.r4.uscore700;
 
 # Generic type to wrap all implemented profiles.
@@ -64,7 +63,7 @@ service /fhir/r4/DiagnosticReport on new fhirr4:Listener(config = diagnosticRepo
     isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
-            searchResult = searchResourceBundle(fhirContext, "DiagnosticReport", mode = fhir:POST);
+            searchResult = searchResourceBundle(fhirContext, "DiagnosticReport");
         }
         return searchResult;
     }
