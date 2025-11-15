@@ -887,6 +887,24 @@ final r4:ResourceAPIConfig medicationApiConfig = {
                 builtin: false,
                 documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-patient-id"
             }
+        },
+        {
+            name: "intent",
+            active: true,
+            information: {
+                description: "**Logical id of this artifact**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-patient-id"
+            }
+        },
+        {
+            name: "status",
+            active: true,
+            information: {
+                description: "**Logical id of this artifact**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-patient-id"
+            }
         }
         ],
     operations: [
