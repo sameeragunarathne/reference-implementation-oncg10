@@ -36,10 +36,10 @@ configurable string bulkExportContextPath = "/export";
 # initialize source system endpoint here
 
 # A service representing a network-accessible API
-service /fhir/r4 on new fhirr4:Listener(config = apiConfig) {
+service / on new fhirr4:Listener(config = apiConfig) {
 
     // Implementation of the $export operation
-    isolated resource function get Group/[string id]/\$export(r4:FHIRContext fhirContext) returns r4:FHIRError|r4:OperationOutcome|error {
+    isolated resource function get fhir/r4/Group/[string id]/\$export(r4:FHIRContext fhirContext) returns r4:FHIRError|r4:OperationOutcome|error {
 
         http:Client httpClient = check new (bulkExportServiceURL);
         http:Response response = check httpClient->get(bulkExportContextPath, {"Content-Type": "application/json", "prefer": "respond-async", "accept": "application/fhir+json"});
