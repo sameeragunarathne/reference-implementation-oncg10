@@ -80,6 +80,22 @@ function extractHeaders(http:Request httpRequest) returns map<string[]> {
     return headers;
 }
 
+// Build query string from query parameters
+function buildQueryString(map<string[]> queryParams) returns string {
+    if queryParams.length() == 0 {
+        return "";
+    }
+    
+    string[] queryParts = [];
+    foreach [string, string[]] [key, values] in queryParams.entries() {
+        foreach string value in values {
+            queryParts.push(key + "=" + value);
+        }
+    }
+    
+    return string:'join("&", ...queryParts);
+}
+
 // Validate organization from JWT and request headers
 function isValidOrg(map<string[]> headers, string? orgName, string reqPath) returns boolean {
     string orgNameStr = orgName ?: "N/A";
@@ -121,6 +137,11 @@ function handleRequest(http:Request httpRequest, string orgName, string[] path, 
     // Extract headers
     map<string[]> headers = extractHeaders(httpRequest);
 
+    // Extract query parameters and build query string
+    map<string[]> queryParams = httpRequest.getQueryParams();
+    string queryString = buildQueryString(queryParams);
+    string fullPath = queryString != "" ? reqPath + "?" + queryString : reqPath;
+
     // Validate organization
     boolean isOrgValid = isValidOrg(headers, orgName, reqPath);
     if !isOrgValid {
@@ -134,22 +155,22 @@ function handleRequest(http:Request httpRequest, string orgName, string[] path, 
     // Make the appropriate HTTP call based on method
     match method {
         "GET" => {
-            return fhirClient->get(reqPath, headers);
+            return fhirClient->get(fullPath, headers);
         }
         "DELETE" => {
-            return fhirClient->delete(reqPath, headers);
+            return fhirClient->delete(fullPath, headers);
         }
         "POST"|"PATCH"|"PUT" => {
             json payload = check httpRequest.getJsonPayload();
             match method {
                 "POST" => {
-                    return fhirClient->post(reqPath, payload, headers);
+                    return fhirClient->post(fullPath, payload, headers);
                 }
                 "PATCH" => {
-                    return fhirClient->patch(reqPath, payload, headers);
+                    return fhirClient->patch(fullPath, payload, headers);
                 }
                 "PUT" => {
-                    return fhirClient->put(reqPath, payload, headers);
+                    return fhirClient->put(fullPath, payload, headers);
                 }
                 _ => {
                     http:Response methodNotAllowedResponse = new;
