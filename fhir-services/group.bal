@@ -36,8 +36,7 @@ configurable string bulkExportContextPath = "/export";
 # initialize source system endpoint here
 
 # A service representing a network-accessible API
-# bound to port `9090`.
-service /fhir/r4 on new fhirr4:Listener(9090, apiConfig) {
+service /fhir/r4 on new fhirr4:Listener(config = apiConfig) {
 
     // Implementation of the $export operation
     isolated resource function get Group/[string id]/\$export(r4:FHIRContext fhirContext) returns r4:FHIRError|r4:OperationOutcome|error {
