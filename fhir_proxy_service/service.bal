@@ -161,7 +161,18 @@ function handleRequest(http:Request httpRequest, string orgName, string[] path, 
             return fhirClient->delete(fullPath, headers);
         }
         "POST"|"PATCH"|"PUT" => {
-            json payload = check httpRequest.getJsonPayload();
+
+            // Extract payload based on content type
+            string|json payload;
+            string|http:HeaderNotFoundError contentTypeResult = httpRequest.getHeader("Content-Type");
+            string contentType = contentTypeResult is string ? contentTypeResult : "";
+            
+            if contentType.toLowerAscii().includes("application/x-www-form-urlencoded") {
+                payload = check httpRequest.getTextPayload();
+            } else {
+                payload = check httpRequest.getJsonPayload();
+            }
+
             match method {
                 "POST" => {
                     return fhirClient->post(fullPath, payload, headers);
