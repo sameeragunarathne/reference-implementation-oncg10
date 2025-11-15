@@ -1006,3 +1006,152 @@ final r4:ResourceAPIConfig immunizationApiConfig = {
     serverConfig: (),
     authzConfig: ()
 };
+
+final r4:ResourceAPIConfig apiConfig = {
+    resourceType: "Group",
+    profiles: [
+        "http://hl7.org/fhir/StructureDefinition/Group",
+        "http://hl7.org/fhir/StructureDefinition/groupdefinition",
+        "http://hl7.org/fhir/StructureDefinition/actualgroup"
+    ],
+    defaultProfile: (),
+    searchParameters: [
+        {
+            name: "code",
+            active: true,
+            information: {
+                description: "The kind of resources contained",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-code"
+            }
+        },
+        {
+            name: "actual",
+            active: true,
+            information: {
+                description: "Descriptive or actual",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-actual"
+            }
+        },
+        {
+            name: "managing-entity",
+            active: true,
+            information: {
+                description: "Entity that is the custodian of the Group's definition",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-managing-entity"
+            }
+        },
+        {
+            name: "exclude",
+            active: true,
+            information: {
+                description: "Group includes or excludes",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-exclude"
+            }
+        },
+        {
+            name: "characteristic-value",
+            active: true,
+            information: {
+                description: "A composite of both characteristic and value",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-characteristic-value"
+            }
+        },
+        {
+            name: "value",
+            active: true,
+            information: {
+                description: "Value held by characteristic",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-value"
+            }
+        },
+        {
+            name: "member",
+            active: true,
+            information: {
+                description: "Reference to the group member",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-member"
+            }
+        },
+        {
+            name: "type",
+            active: true,
+            information: {
+                description: "The type of resources the group contains",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-type"
+            }
+        },
+        {
+            name: "identifier",
+            active: true,
+            information: {
+                description: "Unique id",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-identifier"
+            }
+        },
+        {
+            name: "characteristic",
+            active: true,
+            information: {
+                description: "Kind of characteristic",
+                builtin: false,
+                documentation: "http://hl7.org/fhir/SearchParameter/Group-characteristic"
+            }
+        }
+    ],
+    operations: [
+
+        {
+            name: "export",
+            active: true,
+            parameters: [
+                {
+                    name: "_outputFormat",
+                    active: true,
+                    min: 0
+                },
+                {
+                    name: "_since",
+                    active: true,
+                    min: 0
+                },
+                {
+                    name: "_type",
+                    active: true,
+                    min: 0
+                },
+                {
+                    name: "_elements",
+                    active: true,
+                    min: 0
+                },
+                {
+                    name: "patient",
+                    active: true,
+                    min: 0
+                },
+                {
+                    name: "includeAssociatedData",
+                    active: true,
+                    min: 0
+                },
+                {
+                    name: "_typeFilter",
+                    active: true,
+                    min: 0
+                }
+            ]
+        }
+    ],
+    serverConfig: (),
+    authzConfig: ()
+};
+

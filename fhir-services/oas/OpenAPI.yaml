@@ -4348,6 +4348,31 @@ paths:
       - default: []
       x-auth-type: Application & Application User
 
+  /{id}/$export:
+      get:
+        tags:
+        - GET
+        - Group
+        parameters:
+        - name: id
+          in: path
+          description: logical identifier
+          required: true
+          schema:
+            type: string
+            example: null
+        responses:
+          "200":
+            description: read Group operation successful
+            content:
+              application/fhir+json:
+                schema:
+                  $ref: '#/components/schemas/Group'
+        security:
+        - default: []
+        x-auth-type: Application & Application User
+
+
 components:
   schemas:
     Resource:
