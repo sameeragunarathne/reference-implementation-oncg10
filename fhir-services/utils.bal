@@ -387,7 +387,7 @@ public isolated function fetchResourceById(r4:FHIRContext fhirContext, string re
             return payloadOrError;
         }
         anydata parsedResource = check fhirParser:parse(payloadOrError, resourceDescriptor).ensureType();
-        return parsedResource.clone();
+        return parsedResource.cloneWithType(resourceDescriptor);
     }
 
     return check handleConnectorError(fhirContext, response);
