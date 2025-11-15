@@ -917,46 +917,76 @@ final r4:ResourceAPIConfig medicationApiConfig = {
 final r4:ResourceAPIConfig observationApiConfig = {
     resourceType: "Observation",
     profiles: [
-            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation"        
+            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-lab",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-temperature",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-head-circumference",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-pregnancystatus",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-respiratory-rate",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-blood-pressure",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-pulse-oximetry",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-occupation",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-weight",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-clinical-result",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-screening-assessment",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/head-occipital-frontal-circumference-percentile",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-smokingstatus",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-bmi",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/pediatric-weight-for-height",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/pediatric-bmi-for-age",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-body-height",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-heart-rate",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-vital-signs",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-sexual-orientation",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-pregnancyintent",
+                            "http://hl7.org/fhir/us/core/StructureDefinition/us-core-simple-observation"        
     ],
     defaultProfile: (),
     searchParameters: [
             {
-        name: "clinical-status",
-        active: true,
-        information: {
-            description: "**active | inactive | resolved**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
-            builtin: false,
-            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-allergyintolerance-clinical-status"
-        }
-    },
-            {
         name: "patient",
         active: true,
         information: {
-            description: "**Who the sensitivity is for**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+            description: "**The subject that the observation is about (if patient)**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
             builtin: false,
-            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-allergyintolerance-patient"
+            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-observation-patient"
         }
     },
-        {
-            name: "_id",
-            active: true,
-            information: {
-                description: "**Logical id of this artifact**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
-                builtin: false,
-                documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-patient-id"
-            }
-        },
-         {
-            name: "code",
-            active: true,
-            information: {
-                description: "**Logical id of this artifact**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
-                builtin: false,
-                documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-patient-id"
-            }
+            {
+        name: "code",
+        active: true,
+        information: {
+            description: "**The code of the observation type**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+            builtin: false,
+            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-observation-code"
         }
+    },
+            {
+        name: "category",
+        active: true,
+        information: {
+            description: "**The classification of the type of observation**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+            builtin: false,
+            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-observation-category"
+        }
+    },
+            {
+        name: "status",
+        active: true,
+        information: {
+            description: "**The status of the observation**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+            builtin: false,
+            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-observation-status"
+        }
+    },
+            {
+        name: "date",
+        active: true,
+        information: {
+            description: "**Obtained date/time. If the obtained element is a period, a date that falls in the period**  **NOTE**: This US Core SearchParameter definition extends the usage context of the[Conformance expectation extension](http://hl7.org/fhir/R4/extension-capabilitystatement-expectation.html) - multipleAnd - multipleOr - comparator - modifier - chain",
+            builtin: false,
+            documentation: "http://hl7.org/fhir/us/core/SearchParameter/us-core-observation-date"
+        }
+    }
         ],
     operations: [
     
