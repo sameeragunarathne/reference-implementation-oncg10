@@ -109,7 +109,8 @@ function isValidOrg(map<string[]> headers, string? orgName, string reqPath) retu
         }
     }
 
-    if jwt == "" && publicEndpoints.indexOf(reqPath) > -1 {
+    // if jwt == "" && publicEndpoints.indexOf(reqPath) > -1 {
+    if publicEndpoints.indexOf(reqPath) > -1 {
         log:printDebug("Public endpoint accessed, validating organization with resolver.");
         return validateOrgWithResolver(orgName);
     }
