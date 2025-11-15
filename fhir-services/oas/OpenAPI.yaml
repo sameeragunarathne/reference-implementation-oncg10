@@ -4348,7 +4348,7 @@ paths:
       - default: []
       x-auth-type: Application & Application User
 
-  /{id}/$export:
+  /fhir/r4/Group/{id}/$export:
       get:
         tags:
         - GET
