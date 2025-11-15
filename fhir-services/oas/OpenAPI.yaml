@@ -6478,6 +6478,13 @@ components:
           eventHistory:
             $ref: '#/components/schemas/Reference'
         example: null
+    Group:
+      example: null
+      allOf:
+      - $ref: '#/components/schemas/DomainResource'
+      - type: object
+        properties: {}
+        example: null
   parameters:
     _lastUpdatedParam:
       name: _lastUpdated
