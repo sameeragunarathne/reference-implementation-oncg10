@@ -330,8 +330,17 @@ public isolated function buildSearchParameterMap(r4:FHIRContext fhirContext) ret
         foreach readonly & r4:RequestSearchParameter param in paramArray {
             values.push(param.value);
         }
+        // Construct search parameter value as comma separated when there are multiple values.
+        string commaSeparatedValue = "";
+        foreach int i in 0 ..< values.length() {
+            commaSeparatedValue += values[i];
+            if i < values.length() - 1 {
+                commaSeparatedValue += ",";
+            }
+        }
+
         if values.length() > 0 {
-            queryParameters[paramName] = values;
+            queryParameters[paramName] = [commaSeparatedValue];
         }
     }
 
@@ -371,7 +380,7 @@ isolated function handleConnectorError(r4:FHIRContext fhirContext, fhir:FHIRErro
 }
 
 public isolated function fetchResourceById(r4:FHIRContext fhirContext, string resourceType, string id,
-        typedesc<anydata> resourceDescriptor = json)
+        typedesc<anydata> resourceDescriptor)
         returns anydata|r4:OperationOutcome|r4:FHIRError|error {
     fhir:FHIRConnector|r4:FHIRError connectorResult = getFhirConnectorForContext(fhirContext);
     if connectorResult is r4:FHIRError {
