@@ -23,7 +23,6 @@
 import ballerina/http;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import ballerinax/health.clients.fhir as fhir;
 import ballerinax/health.fhir.r4.uscore700;
 
 # Generic type to wrap all implemented profiles.
