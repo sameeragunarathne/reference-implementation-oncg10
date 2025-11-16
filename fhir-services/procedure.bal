@@ -63,7 +63,7 @@ service /fhir/r4/Procedure on new fhirr4:Listener(config = procedureApiConfig) {
     isolated resource function post _search(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
         r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
         lock {
-            searchResult = searchResourceBundle(fhirContext, "Procedure", mode = fhir:POST);
+            searchResult = searchResourceBundle(fhirContext, "Procedure");
         }
         return searchResult;
     }
