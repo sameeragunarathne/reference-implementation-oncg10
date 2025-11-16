@@ -108,8 +108,7 @@ function isValidOrg(map<string[]> headers, string? orgName, string reqPath) retu
             jwt = authHeader.substring(7);
         }
     }
-
-    if reqPath.includes("/fhir/r4/bulk/") {
+    if reqPath.includes(string `fhir\/r4\/bulk`) || reqPath.includes(string `fhir\/r4\/Group`) {
         // Temporary bypass for bulk export/import endpoints
         return true;
     }
