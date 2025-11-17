@@ -45,8 +45,10 @@ service / on new http:Listener(proxyServerPort) {
 
                 log:printDebug("Modifying response payload in policyNameOut mediation policy");
                 map<json> resPayload = check res.getJsonPayload().ensureType();
+                // get from org resolver service
                 resPayload["smart_style_url"] = smart_style_url;
                 resPayload["need_patient_banner"] = need_patient_banner;
+                // id token fhiruser claim
                 resPayload["patient"] = patient_id;
                 res.setJsonPayload(resPayload);
             }
@@ -107,10 +109,6 @@ function isValidOrg(map<string[]> headers, string? orgName, string reqPath) retu
         if authHeader.startsWith("Bearer ") {
             jwt = authHeader.substring(7);
         }
-    }
-    if reqPath.includes(string `fhir\/r4\/bulk`) || reqPath.includes(string `fhir\/r4\/Group`) {
-        // Temporary bypass for bulk export/import endpoints
-        return true;
     }
     if jwt == "" && publicEndpoints.indexOf(reqPath) > -1 {
         log:printDebug("Public endpoint accessed, validating organization with resolver.");
@@ -226,10 +224,12 @@ function validateOrgWithResolver(string? orgName) returns boolean {
 isolated function validateOrgWithJWT(string jwt, string? orgName) returns boolean {
     [jwt:Header, jwt:Payload]|error [_, payload] = jwt:decode(jwt);
 
-    if payload.hasKey(JWT_ORG_NAME_CLAIM) {
+    if payload.hasKey(JWT_ORG_NAME_CLAIM) && orgName is string{
         string tokenOrgName = payload.get(JWT_ORG_NAME_CLAIM).toString();
-        log:printDebug(string `Executing token based organization validation.`, tokenOrgName = tokenOrgName, resourceOrgName = orgName);
-        return tokenOrgName == orgName;
+        string audiences = payload.get("aud").toString();
+        string[] audienceList = re `,`.split(audiences);
+        log:printDebug(string `Executing token based organization validation.`, tokenOrgName = tokenOrgName, resourceOrgName = orgName, audienceList = audienceList);
+        return tokenOrgName == orgName || audienceList.indexOf(orgName) > -1;
     }
     return false;
 }
