@@ -4,8 +4,8 @@ import ballerina/lang.'string as strings;
 
 // Configurations for Asgardeo Management APIs
 configurable string ASGARDEO_BASE_URL = ?;          // e.g., https://api.asgardeo.io/t/<root_org>
-configurable string ASGARDEO_CLIENT_ID = ?;
-configurable string ASGARDEO_CLIENT_SECRET = ?;
+configurable string ASGARDEO_CLIENT_ID = "";
+configurable string ASGARDEO_CLIENT_SECRET = "";
 // Parent/root organization id used when creating sub-organizations
 configurable string PARENT_ORG_ID = ?;
 configurable string PARENT_ORG_NAME = ?;
@@ -37,44 +37,66 @@ type CreateApplicationRequest record {|
 service /organization on provServiceListener {
 
     // GET /organization
-    resource function get .() returns json|http:Response {
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
+    resource function get .(http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
         // List direct children for configured parent
         // Asgardeo: GET /api/server/v1/organizations?parentId=<PARENT_ORG_ID>
         string path = string `/t/${PARENT_ORG_NAME}/api/server/v1/organizations?parentId=${PARENT_ORG_ID}`;
 
-        http:Response|error res = mgmtClient->execute("GET", path, req);
+        http:Response|error res = mgmtClient->execute("GET", path, mgmtReq);
         if res is error {
             log:printError("List organizations failed", 'error = res);
             return buildError(502, "Failed to fetch organizations", res.detail());
         }
         var resJson = res.getJsonPayload();
         if resJson is json {
-            return resJson;
+            json[] simplified = [];
+            if resJson is map<json> {
+                json? orgsAny = resJson["organizations"];
+                if orgsAny is json[] {
+                    foreach var o in orgsAny {
+                        if o is map<json> {
+                            string id = o["id"] is string ? <string>o["id"] : "";
+                            string name = o["name"] is string ? <string>o["name"] : "";
+                            string orgHandle = o["orgHandle"] is string ? <string>o["orgHandle"] : (o["id"] is string ? <string>o["id"] : "");
+                            simplified.push({ "id": id, "name": name, "handle": orgHandle });
+                        }
+                    }
+                }
+            }
+            return { "organizations": simplified };
         }
         return buildError(502, "Invalid response for organizations list");
     }
 
     // POST /organization
-    resource function post .(@http:Payload CreateOrganizationRequest body) returns json|http:Response {
+    resource function post .(http:Request req, @http:Payload CreateOrganizationRequest body) returns json|http:Response {
         if strings:trim(body.name).length() == 0 {
             return buildError(400, "Missing required field: name");
         }
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
-        req.setHeader("Content-Type", "application/json");
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader("Content-Type", "application/json");
         json payload = {
             name: body.name,
             description: body.description,
             parentId: PARENT_ORG_ID,
             "type": "TENANT"
         };
-        req.setJsonPayload(payload);
+        mgmtReq.setJsonPayload(payload);
 
-        http:Response|error res = mgmtClient->post(string `/t/${PARENT_ORG_NAME}/api/server/v1/organizations`, req);
+        http:Response|error res = mgmtClient->post(string `/t/${PARENT_ORG_NAME}/api/server/v1/organizations`, mgmtReq);
         if res is error {
             log:printError("Create organization failed", 'error = res);
             return buildError(502, "Failed to create organization", res.detail());
@@ -88,46 +110,44 @@ service /organization on provServiceListener {
     }
 
     // GET /organization/{orgId}
-    resource function get [string orgId]() returns json|http:Response {
-        
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
-        req.setHeader(ORG_SCOPE_HEADER, orgId);
-
-        // Get applications
-        http:Response|error appsRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/api/server/v1/applications`, req);
-        if appsRes is error {
-            log:printError("List applications failed", 'error = appsRes);
-            return buildError(502, "Failed to fetch applications", appsRes.detail());
+    resource function get [string orgId](http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
         }
-        json apps = {};
-        var appsJ = appsRes.getJsonPayload();
-        if appsJ is json {
-            apps = appsJ;
-        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader(ORG_SCOPE_HEADER, orgId);
 
         // Get organization details
-        http:Response|error orgRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/api/server/v1/organizations/${orgId}`, req);
-        json orgInfo = {};
-        if orgRes is http:Response {
-            var orgJ = orgRes.getJsonPayload();
-            if orgJ is json {
-                orgInfo = orgJ;
-            }
+        http:Response|error orgRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/api/server/v1/organizations/${orgId}`, mgmtReq);
+        if orgRes is error {
+            log:printError("Get organization failed", 'error = orgRes);
+            return buildError(502, "Failed to fetch organization", orgRes.detail());
         }
-
-        return { organization: orgInfo, applications: apps };
+        var orgJ = orgRes.getJsonPayload();
+        if orgJ is json && orgJ is map<json> {
+            string id = orgJ["id"] is string ? <string>orgJ["id"] : "";
+            string name = orgJ["name"] is string ? <string>orgJ["name"] : "";
+            string orgHandle = orgJ["orgHandle"] is string ? <string>orgJ["orgHandle"] : (orgJ["id"] is string ? <string>orgJ["id"] : "");
+            return { "id": id, "name": name, "handle": orgHandle };
+        }
+        return buildError(502, "Invalid response for organization");
     }
 
     // GET /organization/{orgId}/settings
-    resource function get settings/[string orgId]() returns json|http:Response {
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
+    resource function get settings/[string orgId](http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
 
         // Branding settings endpoint can vary; try a common path
-        http:Response|error res = mgmtClient->execute("GET", string `/o/${orgId}/api/server/v1/branding-preference?locale=en-US&name=${orgId}&type=ORG`, req);
+        http:Response|error res = mgmtClient->execute("GET", string `/o/${orgId}/api/server/v1/branding-preference?locale=en-US&name=${orgId}&type=ORG`, mgmtReq);
         if res is error {
             log:printError("Fetch branding settings failed", 'error = res);
             return buildError(502, "Failed to fetch organization settings", res.detail());
@@ -140,14 +160,18 @@ service /organization on provServiceListener {
     }
 
     // PUT /organization/{orgId}/settings
-    resource function post settings/[string orgId](@http:Payload json payload) returns json|http:Response {
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
-        req.setHeader("Content-Type", "application/json");
-        req.setJsonPayload(payload);
+    resource function post settings/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader("Content-Type", "application/json");
+        mgmtReq.setJsonPayload(payload);
 
-        http:Response|error res = mgmtClient->post(string `/o/${orgId}/api/server/v1/branding-preference`, req);
+        http:Response|error res = mgmtClient->post(string `/o/${orgId}/api/server/v1/branding-preference`, mgmtReq);
         if res is error {
             log:printError("Update branding settings failed", 'error = res);
             return buildError(502, "Failed to update organization settings", res.detail());
@@ -160,15 +184,19 @@ service /organization on provServiceListener {
     }
 
     // POST /organization/{orgId}/application
-    resource function post application/[string orgId](@http:Payload CreateApplicationRequest body)
+    resource function post application/[string orgId](http:Request req, @http:Payload CreateApplicationRequest body)
             returns json|http:Response {
         if strings:trim(body.name).length() == 0 {
             return buildError(400, "Missing required field: name");
         }
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
-        req.setHeader("Content-Type", "application/json");
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader("Content-Type", "application/json");
 
         json payload = {
             name: body.name,
@@ -206,9 +234,9 @@ service /organization on provServiceListener {
             advancedConfigurations: { skipLoginConsent: true, skipLogoutConsent: true },
             associatedRoles: { allowedAudience: "APPLICATION" }
         };
-        req.setJsonPayload(payload);
+        mgmtReq.setJsonPayload(payload);
 
-        http:Response|error res = mgmtClient->post(string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/`, req);
+        http:Response|error res = mgmtClient->post(string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/`, mgmtReq);
         if res is error {
             log:printError("Create application failed", 'error = res);
             return buildError(502, "Failed to create application", res.detail());
@@ -231,16 +259,25 @@ service /organization on provServiceListener {
     }
 
     // GET /organization/{orgId}/application/{appId}
-    resource function get [string orgId]/application/[string appId]() returns json|http:Response {
-                // Step 1: obtain parent access token with broad scopes
-        string parentToken = checkpanic getAccessToken();
+    resource function get [string orgId]/application/[string appId](http:Request req) returns json|http:Response {
+                // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
         // Step 2: exchange token for target organization using organization_switch grant
-        string switchedToken = checkpanic switchOrganizationToken(parentToken, orgId,
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
             "internal_org_application_mgt_view");
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
 
-        http:Response|error res = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications/${appId}`, req);
+        http:Response|error res = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications/${appId}`, mgmtReq);
         if res is error {
             log:printError("Get application failed", 'error = res);
             return buildError(502, "Failed to fetch application", res.detail());
@@ -252,7 +289,7 @@ service /organization on provServiceListener {
         }
 
         // Credentials
-        http:Response|error credsRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/${appId}/inbound-protocols/oidc/metadata`, req);
+        http:Response|error credsRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications/${appId}/inbound-protocols/oidc`, mgmtReq);
         json creds = {};
         if credsRes is http:Response {
             var credsJ = credsRes.getJsonPayload();
@@ -260,17 +297,70 @@ service /organization on provServiceListener {
                 creds = credsJ;
             }
         }
-        return { application: app, credentials: creds };
+        // Pick only required fields from application
+        string appIdOut = "";
+        string appNameOut = "";
+        string appVersionOut = "";
+        string appClientIdOut = "";
+        if app is map<json> {
+            appIdOut = app["id"] is string ? <string>app["id"] : "";
+            appNameOut = app["name"] is string ? <string>app["name"] : "";
+            appVersionOut = app["applicationVersion"] is string ? <string>app["applicationVersion"] : "";
+            appClientIdOut = app["clientId"] is string ? <string>app["clientId"] : "";
+        }
+        // Pick only required fields from credentials
+        string credClientIdOut = "";
+        string credClientSecretOut = "";
+        string[] credGrantTypesOut = [];
+        string[] credCallbackURLsOut = [];
+        if creds is map<json> {
+            credClientIdOut = creds["clientId"] is string ? <string>creds["clientId"] : "";
+            credClientSecretOut = creds["clientSecret"] is string ? <string>creds["clientSecret"] : "";
+            if creds["grantTypes"] is json[] {
+                json[] gtAny = <json[]>creds["grantTypes"];
+                foreach var g in gtAny {
+                    if g is string {
+                        credGrantTypesOut.push(g);
+                    }
+                }
+            }
+            if creds["callbackURLs"] is json[] {
+                json[] cbAny = <json[]>creds["callbackURLs"];
+                foreach var u in cbAny {
+                    if u is string {
+                        credCallbackURLsOut.push(u);
+                    }
+                }
+            }
+        }
+        return {
+            application: {
+                id: appIdOut,
+                name: appNameOut,
+                applicationVersion: appVersionOut,
+                clientId: appClientIdOut
+            },
+            credentials: {
+                clientId: credClientIdOut,
+                clientSecret: credClientSecretOut,
+                grantTypes: credGrantTypesOut,
+                callbackURLs: credCallbackURLsOut
+            }
+        };
     }
 
     // PUT /organization/{orgId}/application/{appId}
-    resource function put [string orgId]/application/[string appId](@http:Payload CreateApplicationRequest body)
+    resource function put [string orgId]/application/[string appId](http:Request req, @http:Payload CreateApplicationRequest body)
             returns json|http:Response {
-        string token = checkpanic getAccessToken();
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${token}`);
-        req.setHeader(ORG_SCOPE_HEADER, orgId);
-        req.setHeader("Content-Type", "application/json");
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader(ORG_SCOPE_HEADER, orgId);
+        mgmtReq.setHeader("Content-Type", "application/json");
 
         json patch = {
             inboundProtocolConfiguration: {
@@ -280,9 +370,9 @@ service /organization on provServiceListener {
                 }
             }
         };
-        req.setJsonPayload(patch);
+        mgmtReq.setJsonPayload(patch);
 
-        http:Response|error res = mgmtClient->put(string `/api/server/v1/applications/${appId}`, req);
+        http:Response|error res = mgmtClient->put(string `/api/server/v1/applications/${appId}`, mgmtReq);
         if res is error {
             log:printError("Update application failed", 'error = res);
             return buildError(502, "Failed to update application", res.detail());
@@ -296,16 +386,24 @@ service /organization on provServiceListener {
 
     // GET /organization/{orgId}/applications/search?filter=...&limit=...&offset=...
     // Uses organization_switch grant to obtain an access token scoped to the target organization.
-    resource function get [string orgId]/application(string? filter, int? limitCount, int? offsetCount)
+    resource function get [string orgId]/application(http:Request req, string? filter, int? limitCount, int? offsetCount)
             returns json|http:Response {
-        // Step 1: obtain parent access token with broad scopes
-        string parentToken = checkpanic getAccessToken();
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
         // Step 2: exchange token for target organization using organization_switch grant
-        string switchedToken = checkpanic switchOrganizationToken(parentToken, orgId,
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
             "internal_org_application_mgt_view");
-
-        http:Request req = new;
-        req.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
 
         // Build query string
         string q = "";
@@ -323,17 +421,62 @@ service /organization on provServiceListener {
         }
 
         string path = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications${q}`;
-        http:Response|error res = mgmtClient->execute("GET", path, req);
+        http:Response|error res = mgmtClient->execute("GET", path, mgmtReq);
         if res is error {
             log:printError("Search applications failed", 'error = res);
             return buildError(502, "Failed to search applications", res.detail());
         }
         var resJson = res.getJsonPayload();
         if resJson is json {
-            return resJson;
+            json[] simplified = [];
+            // Expected format: { "applications": [ { ..app.. }, ... ] }
+            if resJson is map<json> {
+                json? appsAny = resJson["applications"];
+                if appsAny is json[] {
+                    foreach var a in appsAny {
+                        if a is map<json> {
+                            string id = a["id"] is string ? <string>a["id"] : "";
+                            string name = a["name"] is string ? <string>a["name"] : "";
+                            string version = a["applicationVersion"] is string ? <string>a["applicationVersion"] : "";
+                            simplified.push({ "id": id, "name": name, "applicationVersion": version });
+                        }
+                    }
+                }
+                return { "applications": simplified };
+            }
+            // If backend returned a plain array of apps, handle that too.
+            if resJson is json[] {
+                foreach var a in resJson {
+                    if a is map<json> {
+                        string id = a["id"] is string ? <string>a["id"] : "";
+                        string name = a["name"] is string ? <string>a["name"] : "";
+                        string version = a["applicationVersion"] is string ? <string>a["applicationVersion"] : "";
+                        simplified.push({ "id": id, "name": name, "applicationVersion": version });
+                    }
+                }
+                return { "applications": simplified };
+            }
         }
         return buildError(502, "Invalid response for search applications");
     }
+}
+
+function extractAccessToken(http:Request req) returns string|http:Response {
+    string|http:HeaderNotFoundError authHeaderResult = req.getHeader("Authorization");
+    if authHeaderResult is http:HeaderNotFoundError {
+        return buildError(401, "Missing Authorization header");
+    }
+    string authHeader = authHeaderResult;
+    // Check if it starts with "Bearer "
+    if !strings:startsWith(authHeader, "Bearer ") {
+        return buildError(401, "Invalid Authorization header format. Expected 'Bearer <token>'");
+    }
+    // Extract token by removing "Bearer " prefix
+    string token = strings:substring(authHeader, 7);
+    if strings:trim(token).length() == 0 {
+        return buildError(401, "Access token is empty");
+    }
+    return token;
 }
 
 function getAccessToken() returns string|error {
