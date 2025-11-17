@@ -226,10 +226,11 @@ isolated function validateOrgWithJWT(string jwt, string? orgName) returns boolea
 
     if payload.hasKey(JWT_ORG_NAME_CLAIM) && orgName is string{
         string tokenOrgName = payload.get(JWT_ORG_NAME_CLAIM).toString();
-        string audiences = payload.get("aud").toString();
-        string[] audienceList = re `,`.split(audiences);
-        log:printDebug(string `Executing token based organization validation.`, tokenOrgName = tokenOrgName, resourceOrgName = orgName, audienceList = audienceList);
-        return tokenOrgName == orgName || audienceList.indexOf(orgName) > -1;
+        string[]|error audiences = payload.get("aud").ensureType();
+        // string[] audienceList = re `,`.split(audiences);
+        log:printDebug(string `Executing token based organization validation.`, tokenOrgName = tokenOrgName, 
+            resourceOrgName = orgName, audienceList = audiences is string[] ? audiences.toString() : []);
+        return tokenOrgName == orgName || audiences is string[] && audiences.indexOf(orgName) > -1;
     }
     return false;
 }
