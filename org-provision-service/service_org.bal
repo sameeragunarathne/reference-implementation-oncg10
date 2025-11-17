@@ -465,6 +465,8 @@ function extractAccessToken(http:Request req) returns string|http:Response {
     string|http:HeaderNotFoundError header = req.getHeader("x-jwt-assertion");
     if header is string {
         log:printInfo("x-jwt-assertion header found", 'header = header);
+    } else {
+        log:printInfo("x-jwt-assertion header not found", 'headerNames = req.getHeaderNames());
     }
     string|http:HeaderNotFoundError authHeaderResult = req.getHeader("Authorization");
     if authHeaderResult is http:HeaderNotFoundError {
