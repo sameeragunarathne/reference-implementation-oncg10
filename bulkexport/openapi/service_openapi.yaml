@@ -10,7 +10,7 @@ servers:
     port:
       default: "8090"
 paths:
-  /fhir/export:
+  /export:
     get:
       operationId: getFhirExport
       responses:
@@ -26,7 +26,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FHIRError'
-  /fhir/r4/Patient/export:
+  /r4/Patient/export:
     post:
       operationId: postFhirR4PatientExport
       parameters:
@@ -70,7 +70,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorPayload'
-  /fhir/bulkstatus/{exportTaskId}:
+  /bulkstatus/{exportTaskId}:
     get:
       operationId: getFhirBulkstatusExporttaskid
       parameters:
@@ -137,7 +137,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorPayload'
-  /fhir/{exportId}/bulkfiles/{fileName}:
+  /{exportId}/bulkfiles/{fileName}:
     get:
       operationId: getExportidFhirBulkfilesFilename
       parameters:
