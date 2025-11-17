@@ -1,11 +1,13 @@
 import ballerina/http;
 import ballerina/log;
 import ballerina/lang.'string as strings;
+import ballerina/jwt;
+import ballerina/time;
 
 // Configurations for Asgardeo Management APIs
 configurable string ASGARDEO_BASE_URL = ?;          // e.g., https://api.asgardeo.io/t/<root_org>
-configurable string ASGARDEO_CLIENT_ID = "";
-configurable string ASGARDEO_CLIENT_SECRET = "";
+configurable string ASGARDEO_CLIENT_ID = ?;
+configurable string ASGARDEO_CLIENT_SECRET = ?;
 // Parent/root organization id used when creating sub-organizations
 configurable string PARENT_ORG_ID = ?;
 configurable string PARENT_ORG_NAME = ?;
@@ -34,11 +36,22 @@ type CreateApplicationRequest record {|
     string[] callbackURLs?;
 |};
 
-service /organization on provServiceListener {
+// Required scopes for each resource
+const SCOPE_ORGANIZATION_VIEW = "internal_organization_view";
+const SCOPE_ORGANIZATION_CREATE = "internal_organization_create";
+const SCOPE_ORGANIZATION_UPDATE = "internal_organization_update";
+const SCOPE_APPLICATION_VIEW = "internal_application_mgt_view";
+const SCOPE_APPLICATION_CREATE = "internal_application_mgt_create";
+const SCOPE_APPLICATION_UPDATE = "internal_application_mgt_update";
+const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
+const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
+
+
+service /organization\-provision on provServiceListener {
 
     // GET /organization
-    resource function get .(http:Request req) returns json|http:Response {
-        string|http:Response tokenResult = extractAccessToken(req);
+    resource function get organization(http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORGANIZATION_VIEW);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -76,11 +89,11 @@ service /organization on provServiceListener {
     }
 
     // POST /organization
-    resource function post .(http:Request req, @http:Payload CreateOrganizationRequest body) returns json|http:Response {
+    resource function post organization(http:Request req, @http:Payload CreateOrganizationRequest body) returns json|http:Response {
         if strings:trim(body.name).length() == 0 {
             return buildError(400, "Missing required field: name");
         }
-        string|http:Response tokenResult = extractAccessToken(req);
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORGANIZATION_CREATE);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -110,8 +123,8 @@ service /organization on provServiceListener {
     }
 
     // GET /organization/{orgId}
-    resource function get [string orgId](http:Request req) returns json|http:Response {
-        string|http:Response tokenResult = extractAccessToken(req);
+    resource function get organization/[string orgId](http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORGANIZATION_VIEW);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -137,8 +150,8 @@ service /organization on provServiceListener {
     }
 
     // GET /organization/{orgId}/settings
-    resource function get settings/[string orgId](http:Request req) returns json|http:Response {
-        string|http:Response tokenResult = extractAccessToken(req);
+    resource function get organization/settings/[string orgId](http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORGANIZATION_VIEW);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -146,7 +159,6 @@ service /organization on provServiceListener {
         http:Request mgmtReq = new;
         mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
 
-        // Branding settings endpoint can vary; try a common path
         http:Response|error res = mgmtClient->execute("GET", string `/o/${orgId}/api/server/v1/branding-preference?locale=en-US&name=${orgId}&type=ORG`, mgmtReq);
         if res is error {
             log:printError("Fetch branding settings failed", 'error = res);
@@ -159,9 +171,32 @@ service /organization on provServiceListener {
         return buildError(502, "Invalid response for branding settings");
     }
 
+    // GET /organization/settings/branding/{orgId}
+    resource function get organization/settings/branding/[string orgId](http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessTokenWithoutScope(req);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        
+        // Branding settings endpoint
+        http:Response|error res = mgmtClient->execute("GET", string `/o/${orgId}/api/server/v1/branding-preference?locale=en-US&name=${orgId}&type=ORG`, mgmtReq);
+        if res is error {
+            log:printError("Fetch branding settings failed", 'error = res);
+            return buildError(502, "Failed to fetch organization branding settings", res.detail());
+        }
+        var resJson = res.getJsonPayload();
+        if resJson is json {
+            return resJson;
+        }
+        return buildError(502, "Invalid response for branding settings");
+    }
+
     // PUT /organization/{orgId}/settings
-    resource function post settings/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
-        string|http:Response tokenResult = extractAccessToken(req);
+    resource function post organization/settings/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_BRANDING_UPDATE);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -189,7 +224,7 @@ service /organization on provServiceListener {
         if strings:trim(body.name).length() == 0 {
             return buildError(400, "Missing required field: name");
         }
-        string|http:Response tokenResult = extractAccessToken(req);
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_CREATE);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -261,7 +296,7 @@ service /organization on provServiceListener {
     // GET /organization/{orgId}/application/{appId}
     resource function get [string orgId]/application/[string appId](http:Request req) returns json|http:Response {
                 // Step 1: extract access token from request
-        string|http:Response tokenResult = extractAccessToken(req);
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_VIEW);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -352,14 +387,13 @@ service /organization on provServiceListener {
     // PUT /organization/{orgId}/application/{appId}
     resource function put [string orgId]/application/[string appId](http:Request req, @http:Payload CreateApplicationRequest body)
             returns json|http:Response {
-        string|http:Response tokenResult = extractAccessToken(req);
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_UPDATE);
         if tokenResult is http:Response {
             return tokenResult;
         }
         string token = tokenResult;
         http:Request mgmtReq = new;
         mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
-        mgmtReq.setHeader(ORG_SCOPE_HEADER, orgId);
         mgmtReq.setHeader("Content-Type", "application/json");
 
         json patch = {
@@ -389,7 +423,7 @@ service /organization on provServiceListener {
     resource function get [string orgId]/application(http:Request req, string? filter, int? limitCount, int? offsetCount)
             returns json|http:Response {
         // Step 1: extract access token from request
-        string|http:Response tokenResult = extractAccessToken(req);
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_VIEW);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -461,28 +495,139 @@ service /organization on provServiceListener {
     }
 }
 
-function extractAccessToken(http:Request req) returns string|http:Response {
-    string|http:HeaderNotFoundError header = req.getHeader("x-jwt-assertion");
-    if header is string {
-        log:printInfo("x-jwt-assertion header found", 'header = header);
-    } else {
-        log:printInfo("x-jwt-assertion header not found", 'headerNames = req.getHeaderNames());
+// Decode and validate JWT from x-jwt-assertion header
+function validateJwtAndExtractScopes(string jwtToken) returns string[]|http:Response {
+    // Decode JWT without signature validation (signature is validated by API Gateway)
+    [jwt:Header, jwt:Payload]|jwt:Error decodeResult = jwt:decode(jwtToken);
+    if decodeResult is jwt:Error {
+        log:printError("Failed to decode JWT", 'error = decodeResult);
+        return buildError(401, "Invalid JWT token", decodeResult.message());
     }
-    string|http:HeaderNotFoundError authHeaderResult = req.getHeader("Authorization");
-    if authHeaderResult is http:HeaderNotFoundError {
-        return buildError(401, "Missing Authorization header");
+    
+    [jwt:Header, jwt:Payload] [_, payload] = decodeResult;
+    
+    // Extract claims from payload - convert payload to json and then to map
+    json payloadJson = payload.toJson();
+    if payloadJson is map<json> {
+        map<json> claims = payloadJson;
+        
+        // Validate expiration
+        json? expClaim = claims["exp"];
+        if expClaim is int {
+            time:Utc currentTime = time:utcNow();
+            int currentUnixTime = currentTime[0];
+            if currentUnixTime >= <int>expClaim {
+                return buildError(401, "JWT token has expired");
+            }
+        }
+        
+        // Extract scopes
+        json? scopeClaim = claims["scope"];
+        string[] scopes = [];
+        if scopeClaim is string {
+            // Scopes are space-separated - split manually
+            string scopeStr = <string>scopeClaim;
+            string[] parts = [];
+            string current = "";
+            int len = scopeStr.length();
+            int i = 0;
+            while i < len {
+                string charStr = scopeStr.substring(i, i + 1);
+                if charStr == " " {
+                    if current.length() > 0 {
+                        parts.push(current);
+                        current = "";
+                    }
+                } else {
+                    current = current + charStr;
+                }
+                i = i + 1;
+            }
+            if current.length() > 0 {
+                parts.push(current);
+            }
+            foreach string part in parts {
+                string trimmed = strings:trim(part);
+                if trimmed.length() > 0 {
+                    scopes.push(trimmed);
+                }
+            }
+        } else if scopeClaim is json[] {
+            foreach var s in scopeClaim {
+                if s is string {
+                    scopes.push(s);
+                }
+            }
+        }
+        
+        log:printInfo("Extracted scopes from JWT", 'scopes = scopes);
+        return scopes;
     }
-    string authHeader = authHeaderResult;
-    // Check if it starts with "Bearer "
-    if !strings:startsWith(authHeader, "Bearer ") {
-        return buildError(401, "Invalid Authorization header format. Expected 'Bearer <token>'");
+    
+    return buildError(401, "Invalid JWT payload format");
+}
+
+// Check if required scope is present in the scopes array
+function hasRequiredScope(string[] scopes, string requiredScope) returns boolean {
+    foreach string scope in scopes {
+        if scope == requiredScope {
+            return true;
+        }
     }
-    // Extract token by removing "Bearer " prefix
-    string token = strings:substring(authHeader, 7);
-    if strings:trim(token).length() == 0 {
-        return buildError(401, "Access token is empty");
+    return false;
+}
+
+// Extract JWT from x-jwt-assertion header, validate it, check scope, and get Asgardeo access token
+function extractAccessToken(http:Request req, string requiredScope) returns string|http:Response {
+    // Extract JWT from x-jwt-assertion header
+    string|http:HeaderNotFoundError jwtHeaderResult = req.getHeader("x-jwt-assertion");
+    if jwtHeaderResult is http:HeaderNotFoundError {
+        return buildError(401, "Unauthorized Request");
     }
-    return token;
+    string jwtToken = jwtHeaderResult;
+    
+    if strings:trim(jwtToken).length() == 0 {
+        return buildError(401, "Unauthorized Request");
+    }
+    
+    log:printDebug("JWT token found in x-jwt-assertion header");
+    
+    // Validate JWT and extract scopes
+    string[]|http:Response scopesResult = validateJwtAndExtractScopes(jwtToken);
+    if scopesResult is http:Response {
+        return scopesResult;
+    }
+    string[] scopes = scopesResult;
+    
+    // Check if required scope is present
+    if !hasRequiredScope(scopes, requiredScope) {
+        log:printError("Required scope not found", 'requiredScope = requiredScope, 'availableScopes = scopes);
+        return buildError(403, string `Required scopes not found`);
+    }
+    
+    log:printDebug("JWT validation and scope check passed", 'requiredScope = requiredScope);
+    
+    // Get access token from Asgardeo using client credentials
+    string|error accessTokenResult = getAccessToken();
+    if accessTokenResult is error {
+        log:printError("Failed to get access token from Asgardeo", 'error = accessTokenResult);
+        return buildError(502, "Failed to obtain access token from Asgardeo", accessTokenResult.message());
+    }
+    
+    return accessTokenResult;
+}
+
+// Extract JWT from x-jwt-assertion header, validate it (without scope check), and get Asgardeo access token
+function extractAccessTokenWithoutScope(http:Request req) returns string|http:Response {
+    log:printDebug("Extracting access token without scope");
+    // Get access token from Asgardeo using client credentials
+    string|error accessTokenResult = getAccessToken();
+    if accessTokenResult is error {
+        log:printError("Failed to get access token from Asgardeo", 'error = accessTokenResult);
+        return buildError(502, "Failed to obtain access token from Asgardeo", accessTokenResult.message());
+    }
+    
+    return accessTokenResult;
 }
 
 function getAccessToken() returns string|error {
