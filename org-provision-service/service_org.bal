@@ -14,6 +14,8 @@ configurable string PARENT_ORG_NAME = ?;
 // Header name to scope requests to a specific organization in Asgardeo.
 // This changes based on deployment; keeping it configurable is safer.
 configurable string ORG_SCOPE_HEADER = "X-WSO2-Organization";
+// Roles to be shared when sharing applications with organizations
+configurable string[] APPLICATION_SHARE_ROLES = [];
 
 // Reuse the listener defined in provisioner.bal (declared there as: listener http:Listener provServiceListener = new (6000);)
 
@@ -309,7 +311,7 @@ service /organization\-provision on provServiceListener {
     }
 
     // POST /organization/{orgId}/application
-    resource function post application/[string orgId](http:Request req, @http:Payload CreateApplicationRequest body)
+    resource function post [string orgId]/application(http:Request req, @http:Payload CreateApplicationRequest body)
             returns json|http:Response {
         if strings:trim(body.name).length() == 0 {
             return buildError(400, "Missing required field: name");
@@ -377,9 +379,31 @@ service /organization\-provision on provServiceListener {
             }
         }
         var location = res.getHeader("Location");
+        string? applicationId = ();
         if location is string {
             out["location"] = location;
+            // Extract application ID from location header
+            // Location format: /t/<PARENT_ORG_NAME>/api/server/v1/applications/<appId>
+            // or full URL: https://api.asgardeo.io/t/<PARENT_ORG_NAME>/api/server/v1/applications/<appId>
+            applicationId = extractApplicationIdFromLocation(location);
         }
+        
+        // Share the application with the organization if application ID was extracted
+        if applicationId is string {
+            http:Response|error shareRes = shareApplicationWithOrg(token, applicationId, orgId);
+            if shareRes is error {
+                log:printError("Failed to share application with organization", 'error = shareRes, 'applicationId = applicationId, 'orgId = orgId);
+                // Continue even if sharing fails - app was created successfully
+            } else if shareRes.statusCode >= 200 && shareRes.statusCode < 300 {
+                log:printInfo("Application shared successfully with organization", 'applicationId = applicationId, 'orgId = orgId);
+            } else {
+                log:printWarn("Application sharing returned non-success status", 'statusCode = shareRes.statusCode, 'applicationId = applicationId, 'orgId = orgId);
+            }
+        } else {
+            string locationStr = location is string ? location : "";
+            log:printWarn("Could not extract application ID from location header, skipping application share", 'location = locationStr);
+        }
+        
         return <json>out;
     }
 
@@ -607,7 +631,7 @@ function validateJwtAndExtractScopes(string jwtToken) returns string[]|http:Resp
             time:Utc currentTime = time:utcNow();
             int currentUnixTime = currentTime[0];
             if currentUnixTime >= <int>expClaim {
-                // return buildError(401, "JWT token has expired");
+                return buildError(401, "JWT token has expired");
             }
         }
         
@@ -896,6 +920,74 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
     };
     
     return fullPayload;
+}
+
+// Extract application ID from location header
+// Location format examples:
+// - /t/<PARENT_ORG_NAME>/api/server/v1/applications/<appId>
+// - https://api.asgardeo.io/t/<PARENT_ORG_NAME>/api/server/v1/applications/<appId>
+function extractApplicationIdFromLocation(string location) returns string? {
+    // Find the last occurrence of "/applications/"
+    int? lastIndexOpt = location.lastIndexOf("/applications/");
+    if lastIndexOpt is () {
+        return ();
+    }
+    int lastIndex = lastIndexOpt;
+    // Extract everything after "/applications/"
+    string remaining = location.substring(lastIndex + 14); // 14 = length of "/applications/"
+    // Remove any trailing query parameters or fragments
+    int? queryIndexOpt = remaining.indexOf("?");
+    int? fragmentIndexOpt = remaining.indexOf("#");
+    int endIndex = remaining.length();
+    if queryIndexOpt is int {
+        int queryIndex = queryIndexOpt;
+        if queryIndex < endIndex {
+            endIndex = queryIndex;
+        }
+    }
+    if fragmentIndexOpt is int {
+        int fragmentIndex = fragmentIndexOpt;
+        if fragmentIndex < endIndex {
+            endIndex = fragmentIndex;
+        }
+    }
+    string appId = remaining.substring(0, endIndex);
+    if appId.length() > 0 {
+        return appId;
+    }
+    return ();
+}
+
+// Share application with organization
+function shareApplicationWithOrg(string token, string applicationId, string orgId) returns http:Response|error {
+    http:Request shareReq = new;
+    shareReq.setHeader("Authorization", string `Bearer ${token}`);
+    shareReq.setHeader("Content-Type", "application/json");
+    
+    // Build roles array - use configured roles if available
+    json[] rolesArray = [];
+    foreach string role in APPLICATION_SHARE_ROLES {
+        rolesArray.push(role);
+    }
+    
+    json sharePayload = {
+        applicationId: applicationId,
+        organizations: [
+            {
+                orgId: orgId,
+                policy: "SELECTED_ORG_ONLY",
+                roleSharing: {
+                    mode: "NONE",
+                    roles: rolesArray
+                }
+            }
+        ]
+    };
+    shareReq.setJsonPayload(sharePayload);
+    
+    string sharePath = string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/share`;
+    http:Response|error shareRes = mgmtClient->post(sharePath, shareReq);
+    return shareRes;
 }
 
 function buildError(int status, string message, any|error? details = ()) returns http:Response {
