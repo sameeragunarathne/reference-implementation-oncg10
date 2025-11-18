@@ -37,7 +37,7 @@ service /fhir/r4/Procedure on new fhirr4:Listener(config = procedureApiConfig) {
     isolated resource function get [string id](r4:FHIRContext fhirContext) returns Procedure|r4:OperationOutcome|r4:FHIRError|error {
         anydata|r4:OperationOutcome|r4:FHIRError|error result;
         lock {
-            result = fetchResourceById(fhirContext, "Procedure", id, Procedure);
+            result = fetchResourceById(fhirContext, "Procedure", id, uscore700:USCoreProcedureProfile);
         }
         if result is Procedure {
             return result;
