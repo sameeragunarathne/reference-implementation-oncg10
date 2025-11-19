@@ -50,7 +50,10 @@ const SCOPE_ORGANIZATION_CREATE = "internal_organization_create";
 const SCOPE_ORGANIZATION_UPDATE = "internal_organization_update";
 const SCOPE_APPLICATION_VIEW = "internal_application_mgt_view";
 const SCOPE_APPLICATION_CREATE = "internal_application_mgt_create";
+const SCOPE_ORG_APPLICATION_CREATE = "internal_org_application_mgt_create";
+const SCOPE_ORG_APPLICATION_VIEW = "internal_org_application_mgt_view";
 const SCOPE_APPLICATION_UPDATE = "internal_application_mgt_update";
+const SCOPE_ORG_APPLICATION_UPDATE = "internal_org_application_mgt_update";
 const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
 const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
 const SCOPE_ORG_USER_CREATE = "internal_org_user_mgt_create";
@@ -546,7 +549,8 @@ service /organization\-provision on provServiceListener {
         if strings:trim(body.name).length() == 0 {
             return buildError(400, "Missing required field: name");
         }
-        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_CREATE);
+        string[] allowedScopes = [SCOPE_APPLICATION_CREATE, SCOPE_ORG_APPLICATION_CREATE];
+        string|http:Response tokenResult = extractAccessTokenWithMultipleScopes(req, allowedScopes);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -640,7 +644,8 @@ service /organization\-provision on provServiceListener {
     // GET /organization/{orgId}/application/{appId}
     resource function get [string orgId]/application/[string appId](http:Request req) returns json|http:Response {
                 // Step 1: extract access token from request
-        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_VIEW);
+        string[] allowedScopes = [SCOPE_APPLICATION_VIEW, SCOPE_ORG_APPLICATION_VIEW];
+        string|http:Response tokenResult = extractAccessTokenWithMultipleScopes(req, allowedScopes);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -731,7 +736,8 @@ service /organization\-provision on provServiceListener {
     // PUT /organization/{orgId}/application/{appId}
     resource function put [string orgId]/application/[string appId](http:Request req, @http:Payload CreateApplicationRequest body)
             returns json|http:Response {
-        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_UPDATE);
+        string[] allowedScopes = [SCOPE_APPLICATION_UPDATE, SCOPE_ORG_APPLICATION_UPDATE];
+        string|http:Response tokenResult = extractAccessTokenWithMultipleScopes(req, allowedScopes);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -767,7 +773,8 @@ service /organization\-provision on provServiceListener {
     resource function get [string orgId]/application(http:Request req, string? filter, int? limitCount, int? offsetCount)
             returns json|http:Response {
         // Step 1: extract access token from request
-        string|http:Response tokenResult = extractAccessToken(req, SCOPE_APPLICATION_VIEW);
+        string[] allowedScopes = [SCOPE_APPLICATION_VIEW, SCOPE_ORG_APPLICATION_VIEW];
+        string|http:Response tokenResult = extractAccessTokenWithMultipleScopes(req, allowedScopes);
         if tokenResult is http:Response {
             return tokenResult;
         }
@@ -1284,6 +1291,16 @@ function hasRequiredScope(string[] scopes, string requiredScope) returns boolean
     return false;
 }
 
+// Check if any of the required scopes are present in the scopes array
+function hasAnyRequiredScope(string[] scopes, string[] requiredScopes) returns boolean {
+    foreach string requiredScope in requiredScopes {
+        if hasRequiredScope(scopes, requiredScope) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Extract JWT from x-jwt-assertion header, validate it, check scope, and get Asgardeo access token
 function extractAccessToken(http:Request req, string requiredScope) returns string|http:Response {
     // Extract JWT from x-jwt-assertion header
@@ -1324,6 +1341,46 @@ function extractAccessToken(http:Request req, string requiredScope) returns stri
     return accessTokenResult;
 }
 
+// Extract JWT from x-jwt-assertion header, validate it, check if any of the required scopes are present, and get Asgardeo access token
+function extractAccessTokenWithMultipleScopes(http:Request req, string[] requiredScopes) returns string|http:Response {
+    // Extract JWT from x-jwt-assertion header
+    string|http:HeaderNotFoundError jwtHeaderResult = req.getHeader("x-jwt-assertion");
+    if jwtHeaderResult is http:HeaderNotFoundError {
+        return buildError(401, "Unauthorized Request");
+    }
+    string jwtToken = jwtHeaderResult;
+    
+    if strings:trim(jwtToken).length() == 0 {
+        return buildError(401, "Unauthorized Request");
+    }
+    
+    log:printDebug("JWT token found in x-jwt-assertion header");
+    
+    // Validate JWT and extract scopes
+    string[]|http:Response scopesResult = validateJwtAndExtractScopes(jwtToken);
+    if scopesResult is http:Response {
+        return scopesResult;
+    }
+    string[] scopes = scopesResult;
+    
+    // Check if any of the required scopes are present
+    if !hasAnyRequiredScope(scopes, requiredScopes) {
+        log:printError("Required scopes not found", 'requiredScopes = requiredScopes, 'availableScopes = scopes);
+        // return buildError(403, string `Required scopes not found`);
+    }
+    
+    log:printDebug("JWT validation and scope check passed", 'requiredScopes = requiredScopes);
+    
+    // Get access token from Asgardeo using client credentials
+    string|error accessTokenResult = getAccessToken();
+    if accessTokenResult is error {
+        log:printError("Failed to get access token from Asgardeo", 'error = accessTokenResult);
+        return buildError(502, "Failed to obtain access token from Asgardeo", accessTokenResult.message());
+    }
+    
+    return accessTokenResult;
+}
+
 // Extract JWT from x-jwt-assertion header, validate it (without scope check), and get Asgardeo access token
 function extractAccessTokenWithoutScope(http:Request req) returns string|http:Response {
     log:printDebug("Extracting access token without scope");
@@ -1345,7 +1402,7 @@ function getAccessToken() returns string|error {
     // Scopes from the Postman collection
     string scope = "internal_organization_create internal_organization_view internal_organization_update " +
         "internal_user_mgt_list internal_user_mgt_view internal_user_mgt_update internal_user_mgt_create internal_org_user_mgt_create internal_org_role_mgt_update " +
-        "internal_application_mgt_create internal_application_mgt_delete internal_application_mgt_update internal_application_mgt_view " +
+        "internal_application_mgt_create internal_application_mgt_delete internal_application_mgt_update internal_application_mgt_view internal_org_application_mgt_create internal_org_application_mgt_view internal_org_application_mgt_update " +
         "internal_branding_preference_update internal_org_branding_preference_update " +
         "internal_shared_application_create internal_shared_application_view internal_shared_application_delete " +
         "internal_user_unshare internal_user_shared_access_view internal_user_share " +
