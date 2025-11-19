@@ -18,6 +18,8 @@ configurable string ORG_SCOPE_HEADER = "X-WSO2-Organization";
 configurable string[] APPLICATION_SHARE_ROLES = [];
 // Default role ID to assign to users when they are invited
 configurable string DEFAULT_USER_ROLE_ID = "";
+// Map of available roles (role name -> role id) for user invitation
+configurable map<string> AVAILABLE_ROLES = {};
 // Identity Provider configuration
 configurable string DEFAULT_AUTHENTICATOR_ID = ?;
 configurable string AUTHENTICATOR_ID = ?;
@@ -63,6 +65,7 @@ const SCOPE_ORG_IDP_VIEW = "internal_org_idp_view";
 
 type InviteUserRequest record {|
     string email;
+    string role?;
 |};
 
 type CreateIdentityProviderRequest record {|
@@ -919,29 +922,62 @@ service /organization\-provision on provServiceListener {
                 }
             }
             
-            // Add user to configured role if role ID is configured and user ID was extracted
-            if userId is string && strings:trim(DEFAULT_USER_ROLE_ID).length() > 0 {
+            // Determine which role ID to use
+            string? roleIdToUse = ();
+            if body.role is string {
+                string roleName = <string>body.role;
+                if strings:trim(roleName).length() > 0 {
+                    // Switch token for role management view scope to fetch roles
+                    string|error roleViewTokenResult = switchOrganizationToken(parentToken, orgId,
+                        "internal_org_role_mgt_view");
+                    if roleViewTokenResult is error {
+                        log:printError("Failed to switch organization token for role lookup", 'error = roleViewTokenResult, 'orgId = orgId, 'roleName = roleName);
+                        return buildError(502, "Failed to switch organization token for role lookup", roleViewTokenResult.message());
+                    }
+                    string roleViewToken = roleViewTokenResult;
+                    
+                    // Fetch role ID by display name from sub-organization
+                    string|error roleIdResult = getRoleIdByDisplayName(roleViewToken, orgId, roleName);
+                    if roleIdResult is error {
+                        log:printError("Failed to find role", 'error = roleIdResult, 'orgId = orgId, 'roleName = roleName);
+                        return buildError(400, string `Invalid role: ${roleName}. Role not found in organization.`);
+                    }
+                    roleIdToUse = roleIdResult;
+                    log:printDebug("Using role from request", 'roleName = roleName, 'roleId = roleIdToUse);
+                }
+            }
+            
+            // Use default role if no role was provided or if role lookup failed
+            if roleIdToUse is () {
+                if strings:trim(DEFAULT_USER_ROLE_ID).length() > 0 {
+                    roleIdToUse = DEFAULT_USER_ROLE_ID;
+                    log:printDebug("Using default role", 'roleId = roleIdToUse);
+                } else {
+                    log:printDebug("No role specified and DEFAULT_USER_ROLE_ID not configured, skipping role assignment");
+                }
+            }
+            
+            // Add user to role if role ID is determined and user ID was extracted
+            if userId is string && roleIdToUse is string {
                 // Switch token for role management scope
                 string|error roleTokenResult = switchOrganizationToken(parentToken, orgId,
                     "internal_org_role_mgt_update");
                 if roleTokenResult is error {
-                    log:printWarn("Failed to switch organization token for role assignment", 'error = roleTokenResult, 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                    log:printWarn("Failed to switch organization token for role assignment", 'error = roleTokenResult, 'userId = userId, 'roleId = roleIdToUse);
                     // Continue even if token switch fails - user was invited successfully
                 } else {
                     string roleToken = roleTokenResult;
-                    http:Response|error roleRes = addUserToRole(roleToken, userId, DEFAULT_USER_ROLE_ID);
+                    http:Response|error roleRes = addUserToRole(roleToken, userId, roleIdToUse);
                     if roleRes is error {
-                        log:printWarn("Failed to add user to role", 'error = roleRes, 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                        log:printWarn("Failed to add user to role", 'error = roleRes, 'userId = userId, 'roleId = roleIdToUse);
                         // Continue even if role assignment fails - user was invited successfully
                     } else if roleRes.statusCode >= 200 && roleRes.statusCode < 300 {
-                        log:printInfo("User added to role successfully", 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                        log:printInfo("User added to role successfully", 'userId = userId, 'roleId = roleIdToUse);
                     } else {
-                        log:printWarn("Role assignment returned non-success status", 'statusCode = roleRes.statusCode, 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                        log:printWarn("Role assignment returned non-success status", 'statusCode = roleRes.statusCode, 'userId = userId, 'roleId = roleIdToUse);
                     }
                 }
-            } else if strings:trim(DEFAULT_USER_ROLE_ID).length() == 0 {
-                log:printDebug("DEFAULT_USER_ROLE_ID not configured, skipping role assignment");
-            } else {
+            } else if userId is () {
                 log:printWarn("Could not extract user ID from invite response, skipping role assignment");
             }
             
@@ -1654,6 +1690,72 @@ function shareApplicationWithOrg(string token, string applicationId, string orgI
     string sharePath = string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/share`;
     http:Response|error shareRes = mgmtClient->post(sharePath, shareReq);
     return shareRes;
+}
+
+// Fetch role ID by display name from sub-organization
+// Uses SCIM API to get roles and searches for matching displayName
+function getRoleIdByDisplayName(string token, string orgId, string roleDisplayName) returns string|error {
+    http:Request roleReq = new;
+    roleReq.setHeader("Authorization", string `Bearer ${token}`);
+    roleReq.setHeader("Accept", "application/scim+json");
+    
+    // Build query parameters: filter by displayName matching the role name exactly
+    // Using "eq" (equals) filter operator
+    // Replace spaces in role name with "+" for SCIM filter encoding
+    string encodedRoleName = "";
+    int i = 0;
+    while i < roleDisplayName.length() {
+        string char = roleDisplayName.substring(i, i + 1);
+        if char == " " {
+            encodedRoleName = encodedRoleName + "+";
+        } else {
+            encodedRoleName = encodedRoleName + char;
+        }
+        i = i + 1;
+    }
+    string filter = string `displayName+eq+${encodedRoleName}`;
+    string queryParams = string `count=10&excludedAttributes=users,groups,permissions,associatedApplications&filter=${filter}`;
+    string rolePath = string `/t/${PARENT_ORG_NAME}/o/scim2/v2/Roles?${queryParams}`;
+    
+    http:Response|error roleRes = mgmtClient->execute("GET", rolePath, roleReq);
+    if roleRes is error {
+        log:printError("Failed to fetch roles", 'error = roleRes, 'orgId = orgId, 'roleDisplayName = roleDisplayName);
+        return error("Failed to fetch roles", roleRes);
+    }
+    
+    if roleRes.statusCode < 200 || roleRes.statusCode >= 300 {
+        json? errorDetails = ();
+        var errorJson = roleRes.getJsonPayload();
+        if errorJson is json {
+            errorDetails = errorJson;
+        }
+        log:printError("Fetch roles returned error status", 'statusCode = roleRes.statusCode, 'orgId = orgId, 'roleDisplayName = roleDisplayName, 'details = errorDetails);
+        return error(string `Failed to fetch roles: status ${roleRes.statusCode}`, details = errorDetails);
+    }
+    
+    var resJson = roleRes.getJsonPayload();
+    if resJson is json && resJson is map<json> {
+        json? resources = resJson["Resources"];
+        if resources is json[] {
+            foreach var roleItem in resources {
+                if roleItem is map<json> {
+                    json? displayName = roleItem["displayName"];
+                    json? id = roleItem["id"];
+                    if displayName is string && id is string {
+                        string displayNameStr = <string>displayName;
+                        // Exact match (case-sensitive)
+                        if displayNameStr == roleDisplayName {
+                            string roleId = <string>id;
+                            log:printDebug("Found role by display name", 'roleDisplayName = roleDisplayName, 'roleId = roleId);
+                            return roleId;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return error(string `Role not found: ${roleDisplayName}`);
 }
 
 // Add user to a role using SCIM PATCH operation
