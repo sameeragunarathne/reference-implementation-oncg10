@@ -18,6 +18,10 @@ configurable string ORG_SCOPE_HEADER = "X-WSO2-Organization";
 configurable string[] APPLICATION_SHARE_ROLES = [];
 // Default role ID to assign to users when they are invited
 configurable string DEFAULT_USER_ROLE_ID = "";
+// Identity Provider configuration
+configurable string DEFAULT_AUTHENTICATOR_ID = ?;
+configurable string AUTHENTICATOR_ID = ?;
+configurable string IDP_CALLBACK_URL = "";
 
 // Reuse the listener defined in provisioner.bal (declared there as: listener http:Listener provServiceListener = new (6000);)
 
@@ -50,10 +54,21 @@ const SCOPE_APPLICATION_UPDATE = "internal_application_mgt_update";
 const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
 const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
 const SCOPE_ORG_USER_CREATE = "internal_org_user_mgt_create";
+const SCOPE_ORG_IDP_CREATE = "internal_org_idp_create";
 
 
 type InviteUserRequest record {|
     string email;
+|};
+
+type CreateIdentityProviderRequest record {|
+    string jwksUri;
+    string clientId;
+    string clientSecret;
+    string oauth2AuthzEPUrl;
+    string oauth2TokenEPUrl;
+    string name?;
+    string description?;
 |};
 
 service /organization\-provision on provServiceListener {
@@ -720,6 +735,146 @@ service /organization\-provision on provServiceListener {
         return buildError(502, "Invalid response for invite user");
     }
 
+    // POST /organization/{orgId}/identity-provider
+    resource function post [string orgId]/identity\-provider(http:Request req, @http:Payload CreateIdentityProviderRequest body) returns json|http:Response {
+        // Validate required fields
+        if strings:trim(body.jwksUri).length() == 0 {
+            return buildError(400, "Missing required field: jwksUri");
+        }
+        if strings:trim(body.clientId).length() == 0 {
+            return buildError(400, "Missing required field: clientId");
+        }
+        if strings:trim(body.clientSecret).length() == 0 {
+            return buildError(400, "Missing required field: clientSecret");
+        }
+        if strings:trim(body.oauth2AuthzEPUrl).length() == 0 {
+            return buildError(400, "Missing required field: oauth2AuthzEPUrl");
+        }
+        if strings:trim(body.oauth2TokenEPUrl).length() == 0 {
+            return buildError(400, "Missing required field: oauth2TokenEPUrl");
+        }
+        
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_IDP_CREATE);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_idp_create");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        
+        // Step 3: Build identity provider payload
+        string idpName = body.name ?: "EnterpriseOIDCIdp";
+        string idpDescription = body.description ?: "Authenticate users with Enterprise OIDC connections.";
+        
+        // Build callback URL - use configured value or construct default
+        string callbackUrl = IDP_CALLBACK_URL;
+        if strings:trim(callbackUrl).length() == 0 {
+            // Construct default callback URL: https://api.asgardeo.io/o/{orgId}/commonauth
+            callbackUrl = string `${ASGARDEO_BASE_URL}/o/${orgId}/commonauth`;
+        }
+        
+        json idpPayload = {
+            isPrimary: false,
+            roles: {
+                mappings: [],
+                outboundProvisioningRoles: []
+            },
+            certificate: {
+                jwksUri: body.jwksUri,
+                certificates: [""]
+            },
+            claims: {
+                userIdClaim: {
+                    uri: ""
+                },
+                provisioningClaims: [],
+                roleClaim: {
+                    uri: ""
+                }
+            },
+            name: idpName,
+            description: idpDescription,
+            federatedAuthenticators: {
+                defaultAuthenticatorId: DEFAULT_AUTHENTICATOR_ID,
+                authenticators: [
+                    {
+                        isEnabled: true,
+                        authenticatorId: AUTHENTICATOR_ID,
+                        properties: [
+                            {
+                                key: "ClientId",
+                                value: body.clientId
+                            },
+                            {
+                                key: "ClientSecret",
+                                value: body.clientSecret
+                            },
+                            {
+                                key: "OAuth2AuthzEPUrl",
+                                value: body.oauth2AuthzEPUrl
+                            },
+                            {
+                                key: "OAuth2TokenEPUrl",
+                                value: body.oauth2TokenEPUrl
+                            },
+                            {
+                                key: "callbackUrl",
+                                value: callbackUrl
+                            }
+                        ]
+                    }
+                ]
+            },
+            homeRealmIdentifier: "",
+            provisioning: {
+                jit: {
+                    userstore: "DEFAULT",
+                    scheme: "PROVISION_SILENTLY",
+                    isEnabled: true
+                }
+            },
+            isFederationHub: false,
+            templateId: "enterprise-oidc-idp"
+        };
+        
+        // Step 4: Make API call to create identity provider
+        http:Request idpReq = new;
+        idpReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        idpReq.setHeader("Content-Type", "application/json");
+        idpReq.setJsonPayload(idpPayload);
+        
+        string idpPath = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/identity-providers`;
+        http:Response|error idpRes = mgmtClient->post(idpPath, idpReq);
+        if idpRes is error {
+            log:printError("Create identity provider failed", 'error = idpRes, 'orgId = orgId);
+            return buildError(502, "Failed to create identity provider", idpRes.detail());
+        }
+        
+        if idpRes.statusCode < 200 || idpRes.statusCode >= 300 {
+            json? errorDetails = ();
+            var errorJson = idpRes.getJsonPayload();
+            if errorJson is json {
+                errorDetails = errorJson;
+            }
+            log:printError("Create identity provider returned error status", 'statusCode = idpRes.statusCode, 'orgId = orgId, 'details = errorDetails);
+            return buildError(idpRes.statusCode, "Failed to create identity provider", errorDetails);
+        }
+        
+        var resJson = idpRes.getJsonPayload();
+        if resJson is json {
+            return resJson;
+        }
+        return buildError(502, "Invalid response for create identity provider");
+    }
+
 }
 
 // Decode and validate JWT from x-jwt-assertion header
@@ -868,7 +1023,8 @@ function getAccessToken() returns string|error {
         "internal_application_mgt_create internal_application_mgt_delete internal_application_mgt_update internal_application_mgt_view " +
         "internal_branding_preference_update internal_org_branding_preference_update " +
         "internal_shared_application_create internal_shared_application_view internal_shared_application_delete " +
-        "internal_user_unshare internal_user_shared_access_view internal_user_share";
+        "internal_user_unshare internal_user_shared_access_view internal_user_share internal_org_idp_create " +
+        "internal_org_idp_create";
     string body = string `grant_type=client_credentials&client_id=${ASGARDEO_CLIENT_ID}&scope=${scope}`;
     req.setTextPayload(body);
 
