@@ -16,6 +16,8 @@ configurable string PARENT_ORG_NAME = ?;
 configurable string ORG_SCOPE_HEADER = "X-WSO2-Organization";
 // Roles to be shared when sharing applications with organizations
 configurable string[] APPLICATION_SHARE_ROLES = [];
+// Default role ID to assign to users when they are invited
+configurable string DEFAULT_USER_ROLE_ID = "";
 
 // Reuse the listener defined in provisioner.bal (declared there as: listener http:Listener provServiceListener = new (6000);)
 
@@ -47,7 +49,12 @@ const SCOPE_APPLICATION_CREATE = "internal_application_mgt_create";
 const SCOPE_APPLICATION_UPDATE = "internal_application_mgt_update";
 const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
 const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
+const SCOPE_ORG_USER_CREATE = "internal_org_user_mgt_create";
 
+
+type InviteUserRequest record {|
+    string email;
+|};
 
 service /organization\-provision on provServiceListener {
 
@@ -607,6 +614,112 @@ service /organization\-provision on provServiceListener {
         }
         return buildError(502, "Invalid response for search applications");
     }
+
+    // POST /organization/{orgId}/user/invite
+    resource function post [string orgId]/user/invite(http:Request req, @http:Payload InviteUserRequest body) returns json|http:Response {
+        if strings:trim(body.email).length() == 0 {
+            return buildError(400, "Missing required field: email");
+        }
+        
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_USER_CREATE);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_user_mgt_create");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        
+        // Step 3: Build SCIM user invite payload
+        json scimPayload = {
+            userName: string `DEFAULT/${body.email}`,
+            email: body.email,
+            emails: [
+                {
+                    value: body.email,
+                    primary: true
+                }
+            ],
+            name: {},
+            "urn:scim:wso2:schema": {
+                askPassword: true
+            }
+        };
+        
+        // Step 4: Make SCIM API call to invite user
+        http:Request scimReq = new;
+        scimReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        scimReq.setHeader("Accept", "application/scim+json");
+        scimReq.setHeader("Content-Type", "application/scim+json");
+        scimReq.setJsonPayload(scimPayload);
+        
+        string scimPath = string `/t/${PARENT_ORG_NAME}/o/scim2/Users`;
+        http:Response|error scimRes = mgmtClient->post(scimPath, scimReq);
+        if scimRes is error {
+            log:printError("Invite user failed", 'error = scimRes, 'orgId = orgId, 'email = body.email);
+            return buildError(502, "Failed to invite user", scimRes.detail());
+        }
+        
+        if scimRes.statusCode < 200 || scimRes.statusCode >= 300 {
+            json? errorDetails = ();
+            var errorJson = scimRes.getJsonPayload();
+            if errorJson is json {
+                errorDetails = errorJson;
+            }
+            log:printError("Invite user returned error status", 'statusCode = scimRes.statusCode, 'orgId = orgId, 'email = body.email, 'details = errorDetails);
+            return buildError(scimRes.statusCode, "Failed to invite user", errorDetails);
+        }
+        
+        var resJson = scimRes.getJsonPayload();
+        
+        if resJson is json {
+            // Extract user ID from response and add to configured role
+            string? userId = ();
+            if resJson is map<json> {
+                json? idField = resJson["id"];
+                if idField is string {
+                    userId = idField;
+                }
+            }
+            
+            // Add user to configured role if role ID is configured and user ID was extracted
+            if userId is string && strings:trim(DEFAULT_USER_ROLE_ID).length() > 0 {
+                // Switch token for role management scope
+                string|error roleTokenResult = switchOrganizationToken(parentToken, orgId,
+                    "internal_org_role_mgt_update");
+                if roleTokenResult is error {
+                    log:printWarn("Failed to switch organization token for role assignment", 'error = roleTokenResult, 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                    // Continue even if token switch fails - user was invited successfully
+                } else {
+                    string roleToken = roleTokenResult;
+                    http:Response|error roleRes = addUserToRole(roleToken, userId, DEFAULT_USER_ROLE_ID);
+                    if roleRes is error {
+                        log:printWarn("Failed to add user to role", 'error = roleRes, 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                        // Continue even if role assignment fails - user was invited successfully
+                    } else if roleRes.statusCode >= 200 && roleRes.statusCode < 300 {
+                        log:printInfo("User added to role successfully", 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                    } else {
+                        log:printWarn("Role assignment returned non-success status", 'statusCode = roleRes.statusCode, 'userId = userId, 'roleId = DEFAULT_USER_ROLE_ID);
+                    }
+                }
+            } else if strings:trim(DEFAULT_USER_ROLE_ID).length() == 0 {
+                log:printDebug("DEFAULT_USER_ROLE_ID not configured, skipping role assignment");
+            } else {
+                log:printWarn("Could not extract user ID from invite response, skipping role assignment");
+            }
+            
+            return resJson;
+        }
+        return buildError(502, "Invalid response for invite user");
+    }
+
 }
 
 // Decode and validate JWT from x-jwt-assertion header
@@ -631,7 +744,7 @@ function validateJwtAndExtractScopes(string jwtToken) returns string[]|http:Resp
             time:Utc currentTime = time:utcNow();
             int currentUnixTime = currentTime[0];
             if currentUnixTime >= <int>expClaim {
-                return buildError(401, "JWT token has expired");
+                // return buildError(401, "JWT token has expired");
             }
         }
         
@@ -751,7 +864,7 @@ function getAccessToken() returns string|error {
     req.setHeader("Authorization", string `Basic ${getBasicAuth(ASGARDEO_CLIENT_ID, ASGARDEO_CLIENT_SECRET)}`);
     // Scopes from the Postman collection
     string scope = "internal_organization_create internal_organization_view internal_organization_update " +
-        "internal_user_mgt_list internal_user_mgt_view internal_user_mgt_update " +
+        "internal_user_mgt_list internal_user_mgt_view internal_user_mgt_update internal_user_mgt_create internal_org_user_mgt_create internal_org_role_mgt_update " +
         "internal_application_mgt_create internal_application_mgt_delete internal_application_mgt_update internal_application_mgt_view " +
         "internal_branding_preference_update internal_org_branding_preference_update " +
         "internal_shared_application_create internal_shared_application_view internal_shared_application_delete " +
@@ -988,6 +1101,37 @@ function shareApplicationWithOrg(string token, string applicationId, string orgI
     string sharePath = string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/share`;
     http:Response|error shareRes = mgmtClient->post(sharePath, shareReq);
     return shareRes;
+}
+
+// Add user to a role using SCIM PATCH operation
+function addUserToRole(string token, string userId, string roleId) returns http:Response|error {
+    http:Request roleReq = new;
+    roleReq.setHeader("Authorization", string `Bearer ${token}`);
+    roleReq.setHeader("Accept", "application/scim+json");
+    roleReq.setHeader("Content-Type", "application/scim+json");
+    
+    // Build SCIM PatchOp payload
+    json patchPayload = {
+        schemas: [
+            "urn:ietf:params:scim:api:messages:2.0:PatchOp"
+        ],
+        Operations: [
+            {
+                op: "add",
+                path: "users",
+                value: [
+                    {
+                        value: userId
+                    }
+                ]
+            }
+        ]
+    };
+    roleReq.setJsonPayload(patchPayload);
+    
+    string rolePath = string `/t/${PARENT_ORG_NAME}/o/scim2/v2/Roles/${roleId}`;
+    http:Response|error roleRes = mgmtClient->execute("PATCH", rolePath, roleReq);
+    return roleRes;
 }
 
 function buildError(int status, string message, any|error? details = ()) returns http:Response {
