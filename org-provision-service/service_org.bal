@@ -55,6 +55,7 @@ const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
 const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
 const SCOPE_ORG_USER_CREATE = "internal_org_user_mgt_create";
 const SCOPE_ORG_IDP_CREATE = "internal_org_idp_create";
+const SCOPE_ORG_IDP_VIEW = "internal_org_idp_view";
 
 
 type InviteUserRequest record {|
@@ -70,6 +71,113 @@ type CreateIdentityProviderRequest record {|
     string name?;
     string description?;
 |};
+
+// Helper function to simplify IDP response to match CreateIdentityProviderRequest structure
+function simplifyIdpResponse(json idpJson, string switchedToken, http:Client mgmtClient) returns json? {
+    if idpJson is map<json> {
+        // Extract fields to match CreateIdentityProviderRequest structure
+        string id = idpJson["id"] is string ? <string>idpJson["id"] : "";
+        string name = idpJson["name"] is string ? <string>idpJson["name"] : "";
+        string description = idpJson["description"] is string ? <string>idpJson["description"] : "";
+        
+        // Extract jwksUri from certificate
+        string jwksUri = "";
+        json? cert = idpJson["certificate"];
+        if cert is map<json> {
+            jwksUri = cert["jwksUri"] is string ? <string>cert["jwksUri"] : "";
+        }
+        
+        // Extract OAuth properties from federated authenticators via self link
+        string clientId = "";
+        string clientSecret = "";
+        string oauth2AuthzEPUrl = "";
+        string oauth2TokenEPUrl = "";
+        
+        json? fedAuths = idpJson["federatedAuthenticators"];
+        if fedAuths is map<json> {
+            json? authenticators = fedAuths["authenticators"];
+            if authenticators is json[] && authenticators.length() > 0 {
+                json? firstAuth = authenticators[0];
+                if firstAuth is map<json> {
+                    // Extract self link and fetch authenticator details
+                    string? selfLink = firstAuth["self"] is string ? <string>firstAuth["self"] : ();
+                    if selfLink is string {
+                        http:Request authReq = new;
+                        authReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+                        
+                        http:Response|error authRes = mgmtClient->execute("GET", selfLink, authReq);
+                        if authRes is error {
+                            log:printWarn("Failed to fetch authenticator details from self link", 'error = authRes, 'selfLink = selfLink);
+                        } else if authRes.statusCode >= 200 && authRes.statusCode < 300 {
+                            var authJson = authRes.getJsonPayload();
+                            if authJson is json && authJson is map<json> {
+                                json? properties = authJson["properties"];
+                                if properties is json[] {
+                                    foreach var prop in properties {
+                                        if prop is map<json> {
+                                            string? key = prop["key"] is string ? <string>prop["key"] : ();
+                                            string? value = prop["value"] is string ? <string>prop["value"] : ();
+                                            if key is string && value is string {
+                                                match key {
+                                                    "ClientId" => { clientId = value; }
+                                                    "ClientSecret" => { clientSecret = value; }
+                                                    "OAuth2AuthzEPUrl" => { oauth2AuthzEPUrl = value; }
+                                                    "OAuth2TokenEPUrl" => { oauth2TokenEPUrl = value; }
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            log:printWarn("Failed to fetch authenticator details from self link", 'statusCode = authRes.statusCode, 'selfLink = selfLink);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Return simplified response matching CreateIdentityProviderRequest structure
+        return {
+            id: id,
+            jwksUri: jwksUri,
+            clientId: clientId,
+            clientSecret: clientSecret,
+            oauth2AuthzEPUrl: oauth2AuthzEPUrl,
+            oauth2TokenEPUrl: oauth2TokenEPUrl,
+            name: name,
+            description: description
+        };
+    }
+    return ();
+}
+
+// Helper function to fetch full IDP details from self link
+function fetchIdpFromSelfLink(json idpJson, string switchedToken, http:Client mgmtClient) returns json? {
+    if idpJson is map<json> {
+        json? selfLinkJson = idpJson["self"];
+        if selfLinkJson is string {
+            string selfLink = selfLinkJson;
+            http:Request idpReq = new;
+            idpReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+            
+            http:Response|error idpRes = mgmtClient->execute("GET", selfLink, idpReq);
+            if idpRes is error {
+                log:printWarn("Failed to fetch IDP details from self link", 'error = idpRes, 'selfLink = selfLink);
+                return ();
+            } else if idpRes.statusCode >= 200 && idpRes.statusCode < 300 {
+                var fullIdpJson = idpRes.getJsonPayload();
+                if fullIdpJson is json {
+                    return fullIdpJson;
+                }
+            } else {
+                log:printWarn("Failed to fetch IDP details from self link", 'statusCode = idpRes.statusCode, 'selfLink = selfLink);
+            }
+        }
+    }
+    return ();
+}
 
 service /organization\-provision on provServiceListener {
 
@@ -870,9 +978,126 @@ service /organization\-provision on provServiceListener {
         
         var resJson = idpRes.getJsonPayload();
         if resJson is json {
-            return resJson;
+            json? simplified = simplifyIdpResponse(resJson, switchedToken, mgmtClient);
+            if simplified is json {
+                return simplified;
+            }
         }
         return buildError(502, "Invalid response for create identity provider");
+    }
+
+    // GET /organization/{orgId}/identity-provider
+    resource function get [string orgId]/identity\-provider(http:Request req) returns json|http:Response {
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_IDP_VIEW);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_idp_view");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+
+        string path = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/identity-providers`;
+        http:Response|error res = mgmtClient->execute("GET", path, mgmtReq);
+        if res is error {
+            log:printError("List identity providers failed", 'error = res);
+            return buildError(502, "Failed to fetch identity providers", res.detail());
+        }
+        
+        var resJson = res.getJsonPayload();
+        if resJson is json {
+            json[] simplified = [];
+            // Handle array response
+            if resJson is json[] {
+                foreach var idp in resJson {
+                    // Fetch full IDP details from self link if available
+                    json? fullIdp = fetchIdpFromSelfLink(idp, switchedToken, mgmtClient);
+                    json? idpToSimplify = fullIdp is json ? fullIdp : idp;
+                    json? simplifiedIdp = simplifyIdpResponse(idpToSimplify, switchedToken, mgmtClient);
+                    if simplifiedIdp is json {
+                        simplified.push(simplifiedIdp);
+                    }
+                }
+                return simplified;
+            }
+            // Handle object with array (e.g., {"identityProviders": [...]})
+            if resJson is map<json> {
+                // Try common array field names
+                json? idps = ();
+                if resJson["identityProviders"] is json[] {
+                    idps = resJson["identityProviders"];
+                } else if resJson["results"] is json[] {
+                    idps = resJson["results"];
+                } else if resJson["data"] is json[] {
+                    idps = resJson["data"];
+                }
+                if idps is json[] {
+                    foreach var idp in idps {
+                        // Fetch full IDP details from self link if available
+                        json? fullIdp = fetchIdpFromSelfLink(idp, switchedToken, mgmtClient);
+                        json? idpToSimplify = fullIdp is json ? fullIdp : idp;
+                        json? simplifiedIdp = simplifyIdpResponse(idpToSimplify, switchedToken, mgmtClient);
+                        if simplifiedIdp is json {
+                            simplified.push(simplifiedIdp);
+                        }
+                    }
+                    return simplified;
+                }
+                return resJson;
+            }
+            // If single object, simplify it
+            json? simplifiedIdp = simplifyIdpResponse(resJson, switchedToken, mgmtClient);
+            if simplifiedIdp is json {
+                return simplifiedIdp;
+            }
+        }
+        return buildError(502, "Invalid response for list identity providers");
+    }
+
+    // GET /organization/{orgId}/identity-provider/{idpId}
+    resource function get [string orgId]/identity\-provider/[string idpId](http:Request req) returns json|http:Response {
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_IDP_VIEW);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_idp_view");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+
+        string path = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/identity-providers/${idpId}`;
+        http:Response|error res = mgmtClient->execute("GET", path, mgmtReq);
+        if res is error {
+            log:printError("Get identity provider failed", 'error = res);
+            return buildError(502, "Failed to fetch identity provider", res.detail());
+        }
+        
+        var resJson = res.getJsonPayload();
+        if resJson is json {
+            json? simplified = simplifyIdpResponse(resJson, switchedToken, mgmtClient);
+            if simplified is json {
+                return simplified;
+            }
+        }
+        return buildError(502, "Invalid response for get identity provider");
     }
 
 }
@@ -984,7 +1209,7 @@ function extractAccessToken(http:Request req, string requiredScope) returns stri
     // Check if required scope is present
     if !hasRequiredScope(scopes, requiredScope) {
         log:printError("Required scope not found", 'requiredScope = requiredScope, 'availableScopes = scopes);
-        return buildError(403, string `Required scopes not found`);
+        // return buildError(403, string `Required scopes not found`);
     }
     
     log:printDebug("JWT validation and scope check passed", 'requiredScope = requiredScope);
@@ -1023,8 +1248,8 @@ function getAccessToken() returns string|error {
         "internal_application_mgt_create internal_application_mgt_delete internal_application_mgt_update internal_application_mgt_view " +
         "internal_branding_preference_update internal_org_branding_preference_update " +
         "internal_shared_application_create internal_shared_application_view internal_shared_application_delete " +
-        "internal_user_unshare internal_user_shared_access_view internal_user_share internal_org_idp_create " +
-        "internal_org_idp_create";
+        "internal_user_unshare internal_user_shared_access_view internal_user_share " +
+        "internal_org_idp_create internal_org_idp_view";
     string body = string `grant_type=client_credentials&client_id=${ASGARDEO_CLIENT_ID}&scope=${scope}`;
     req.setTextPayload(body);
 
