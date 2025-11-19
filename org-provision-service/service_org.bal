@@ -374,21 +374,115 @@ service /organization\-provision on provServiceListener {
 
     // PUT /organization/{orgId}/settings
     resource function post organization/settings/branding/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
+        // Step 1: extract access token from request
         string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_BRANDING_UPDATE);
         if tokenResult is http:Response {
             return tokenResult;
         }
-        string token = tokenResult;
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_branding_preference_update");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
         
         // Build full branding preference payload from simplified input
         json fullPayload = buildBrandingPreferencePayload(payload);
         
         http:Request mgmtReq = new;
-        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
         mgmtReq.setHeader("Content-Type", "application/json");
         mgmtReq.setJsonPayload(fullPayload);
 
-        http:Response|error res = mgmtClient->post(string `/o/${orgId}/api/server/v1/branding-preference`, mgmtReq);
+        http:Response|error res = mgmtClient->post(string `/t/${PARENT_ORG_NAME}/o/api/server/v1/branding-preference`, mgmtReq);
+        if res is error {
+            log:printError("Update branding settings failed", 'error = res);
+            return buildError(502, "Failed to update organization settings", res.detail());
+        }
+        var resJson = res.getJsonPayload();
+        if resJson is json && resJson is map<json> {
+            // Extract preference.theme.activeTheme
+            json? preference = resJson["preference"];
+            string activeTheme = "LIGHT";
+            json? primaryColor = ();
+            json? secondaryColor = ();
+            json? logo = ();
+            
+            if preference is map<json> {
+                json? theme = preference["theme"];
+                if theme is map<json> {
+                    json? activeThemeJson = theme["activeTheme"];
+                    if activeThemeJson is string {
+                        activeTheme = activeThemeJson;
+                    }
+                    
+                    // Get theme data based on active theme
+                    json? themeData = theme[activeTheme];
+                    if themeData is map<json> {
+                        // Extract primary and secondary colors: theme.LIGHT.colors.primary.main and theme.LIGHT.colors.secondary.main
+                        json? colors = themeData["colors"];
+                        if colors is map<json> {
+                            json? primary = colors["primary"];
+                            if primary is map<json> {
+                                primaryColor = primary["main"];
+                            }
+                            json? secondary = colors["secondary"];
+                            if secondary is map<json> {
+                                secondaryColor = secondary["main"];
+                            }
+                        }
+                        
+                        // Extract logo: theme.LIGHT.images.logo
+                        json? images = themeData["images"];
+                        if images is map<json> {
+                            logo = images["logo"];
+                        }
+                    }
+                }
+            }
+            
+            // Build simplified response
+            json simplified = {
+                primary: primaryColor,
+                secondary: secondaryColor,
+                logo: logo
+            };
+            return simplified;
+        }
+        return buildError(502, "Invalid response for update branding settings");
+    }
+
+    // PUT /organization/{orgId}/settings
+    resource function put organization/settings/branding/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_BRANDING_UPDATE);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_branding_preference_update");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        
+        // Build full branding preference payload from simplified input
+        json fullPayload = buildBrandingPreferencePayload(payload);
+        
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        mgmtReq.setHeader("Content-Type", "application/json");
+        mgmtReq.setJsonPayload(fullPayload);
+
+        http:Response|error res = mgmtClient->put(string `/t/${PARENT_ORG_NAME}/o/api/server/v1/branding-preference`, mgmtReq);
         if res is error {
             log:printError("Update branding settings failed", 'error = res);
             return buildError(502, "Failed to update organization settings", res.detail());
@@ -1342,6 +1436,34 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
     if secondary is string {
         secondaryValue = secondary;
     }
+
+       // Build images structure
+    json logoObj = {
+        "imgURL": "",
+        "altText": ""
+    };
+    
+    if logo is string {
+        string logoStr = logo;
+        logoObj = {
+            "imgURL": logoStr,
+            "altText": ""
+        };
+    } else if logo is map<json> {
+        logoObj = logo;
+    }
+
+    json imagesStructure = {
+        "logo": logoObj,
+        "favicon": {
+            "imgURL": ""
+        }
+    };
+    
+    // If full images object is provided, use it
+    if images is map<json> {
+        imagesStructure = images;
+    }
     
     json themeStructure = {
         "activeTheme": activeTheme,
@@ -1361,7 +1483,8 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
                     "main": secondaryValue,
                     "inverted": ""
                 }
-            }
+            },
+            "images": imagesStructure
         }
     };
     
@@ -1370,33 +1493,6 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
         themeStructure = theme;
     }
     
-    // Build images structure
-    json logoObj = {
-        "imgURL": "",
-        "altText": ""
-    };
-    
-    if logo is string {
-        string logoStr = logo;
-        logoObj = {
-            "imgURL": logoStr,
-            "altText": ""
-        };
-    } else if logo is map<json> {
-        logoObj = logo;
-    }
-    
-    json imagesStructure = {
-        "logo": logoObj,
-        "favicon": {
-            "imgURL": ""
-        }
-    };
-    
-    // If full images object is provided, use it
-    if images is map<json> {
-        imagesStructure = images;
-    }
     
     // Build organizationDetails structure
     json orgDetailsStructure = {
@@ -1427,7 +1523,6 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
         "locale": "en-US",
         "preference": {
             "organizationDetails": orgDetailsStructure,
-            "images": imagesStructure,
             "urls": urlsStructure,
             "theme": themeStructure
         }
