@@ -324,7 +324,8 @@ service /organization\-provision on provServiceListener {
             // Extract preference.theme.activeTheme
             json? preference = resJson["preference"];
             string activeTheme = "LIGHT";
-            json? themeColor = ();
+            json? primaryColor = ();
+            json? secondaryColor = ();
             json? logo = ();
             
             if preference is map<json> {
@@ -338,15 +339,16 @@ service /organization\-provision on provServiceListener {
                     // Get theme data based on active theme
                     json? themeData = theme[activeTheme];
                     if themeData is map<json> {
-                        // Extract color: theme.LIGHT.colors.background.body.main
+                        // Extract primary and secondary colors: theme.LIGHT.colors.primary.main and theme.LIGHT.colors.secondary.main
                         json? colors = themeData["colors"];
                         if colors is map<json> {
-                            json? background = colors["background"];
-                            if background is map<json> {
-                                json? body = background["body"];
-                                if body is map<json> {
-                                    themeColor = body["main"];
-                                }
+                            json? primary = colors["primary"];
+                            if primary is map<json> {
+                                primaryColor = primary["main"];
+                            }
+                            json? secondary = colors["secondary"];
+                            if secondary is map<json> {
+                                secondaryColor = secondary["main"];
                             }
                         }
                         
@@ -361,7 +363,8 @@ service /organization\-provision on provServiceListener {
             
             // Build simplified response
             json simplified = {
-                color: themeColor,
+                primary: primaryColor,
+                secondary: secondaryColor,
                 logo: logo
             };
             return simplified;
@@ -370,7 +373,7 @@ service /organization\-provision on provServiceListener {
     }
 
     // PUT /organization/{orgId}/settings
-    resource function post organization/settings/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
+    resource function post organization/settings/branding/[string orgId](http:Request req, @http:Payload json payload) returns json|http:Response {
         string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_BRANDING_UPDATE);
         if tokenResult is http:Response {
             return tokenResult;
@@ -395,7 +398,8 @@ service /organization\-provision on provServiceListener {
             // Extract preference.theme.activeTheme
             json? preference = resJson["preference"];
             string activeTheme = "LIGHT";
-            json? themeColor = ();
+            json? primaryColor = ();
+            json? secondaryColor = ();
             json? logo = ();
             
             if preference is map<json> {
@@ -409,15 +413,16 @@ service /organization\-provision on provServiceListener {
                     // Get theme data based on active theme
                     json? themeData = theme[activeTheme];
                     if themeData is map<json> {
-                        // Extract color: theme.LIGHT.colors.background.body.main
+                        // Extract primary and secondary colors: theme.LIGHT.colors.primary.main and theme.LIGHT.colors.secondary.main
                         json? colors = themeData["colors"];
                         if colors is map<json> {
-                            json? background = colors["background"];
-                            if background is map<json> {
-                                json? body = background["body"];
-                                if body is map<json> {
-                                    themeColor = body["main"];
-                                }
+                            json? primary = colors["primary"];
+                            if primary is map<json> {
+                                primaryColor = primary["main"];
+                            }
+                            json? secondary = colors["secondary"];
+                            if secondary is map<json> {
+                                secondaryColor = secondary["main"];
                             }
                         }
                         
@@ -432,7 +437,8 @@ service /organization\-provision on provServiceListener {
             
             // Build simplified response
             json simplified = {
-                color: themeColor,
+                primary: primaryColor,
+                secondary: secondaryColor,
                 logo: logo
             };
             return simplified;
@@ -1302,7 +1308,8 @@ function getBasicAuth(string user, string pass) returns string {
 // Build full branding preference payload from simplified input
 function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
     // Extract values from simplified payload
-    json? color = ();
+    json? primary = ();
+    json? secondary = ();
     json? logo = ();
     json? organizationDetails = ();
     json? images = ();
@@ -1312,7 +1319,8 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
     
     if simplifiedPayload is map<json> {
         map<json> simplified = simplifiedPayload;
-        color = simplified["color"];
+        primary = simplified["primary"];
+        secondary = simplified["secondary"];
         logo = simplified["logo"];
         organizationDetails = simplified["organizationDetails"];
         images = simplified["images"];
@@ -1325,9 +1333,14 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
     }
     
     // Build theme structure
-    string colorValue = "";
-    if color is string {
-        colorValue = color;
+    string primaryValue = "";
+    if primary is string {
+        primaryValue = primary;
+    }
+    
+    string secondaryValue = "";
+    if secondary is string {
+        secondaryValue = secondary;
     }
     
     json themeStructure = {
@@ -1338,7 +1351,14 @@ function buildBrandingPreferencePayload(json simplifiedPayload) returns json {
                     "contrastText": "",
                     "dark": "",
                     "light": "",
-                    "main": colorValue,
+                    "main": primaryValue,
+                    "inverted": ""
+                },
+                "secondary": {
+                    "contrastText": "",
+                    "dark": "",
+                    "light": "",
+                    "main": secondaryValue,
                     "inverted": ""
                 }
             }
