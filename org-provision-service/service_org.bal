@@ -18,8 +18,9 @@ configurable string ORG_SCOPE_HEADER = "X-WSO2-Organization";
 configurable string[] APPLICATION_SHARE_ROLES = [];
 // Default role ID to assign to users when they are invited
 configurable string DEFAULT_USER_ROLE_ID = "";
-// Map of available roles (role name -> role id) for user invitation
-configurable map<string> AVAILABLE_ROLES = {};
+// List of allowed role names for user invitation
+// If this is configured and non-empty, only role names in this list will be accepted
+configurable string[] ALLOWED_ROLE_NAMES = [];
 // Identity Provider configuration
 configurable string DEFAULT_AUTHENTICATOR_ID = ?;
 configurable string AUTHENTICATOR_ID = ?;
@@ -59,6 +60,7 @@ const SCOPE_ORG_APPLICATION_UPDATE = "internal_org_application_mgt_update";
 const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
 const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
 const SCOPE_ORG_USER_CREATE = "internal_org_user_mgt_create";
+const SCOPE_ORG_USER_LIST = "internal_org_user_mgt_list";
 const SCOPE_ORG_IDP_CREATE = "internal_org_idp_create";
 const SCOPE_ORG_IDP_VIEW = "internal_org_idp_view";
 
@@ -927,6 +929,20 @@ service /organization\-provision on provServiceListener {
             if body.role is string {
                 string roleName = <string>body.role;
                 if strings:trim(roleName).length() > 0 {
+                    // Validate role name against allowed role names if configured
+                    if ALLOWED_ROLE_NAMES.length() > 0 {
+                        boolean isAllowed = false;
+                        foreach string allowedRole in ALLOWED_ROLE_NAMES {
+                            if strings:trim(allowedRole) == strings:trim(roleName) {
+                                isAllowed = true;
+                                break;
+                            }
+                        }
+                        if !isAllowed {
+                            log:printWarn("Unauthorized role name attempted", 'orgId = orgId, 'roleName = roleName, 'allowedRoles = ALLOWED_ROLE_NAMES);
+                            return buildError(401, string `Unauthorized attempt.`);
+                        }
+                    }
                     // Switch token for role management view scope to fetch roles
                     string|error roleViewTokenResult = switchOrganizationToken(parentToken, orgId,
                         "internal_org_role_mgt_view");
@@ -984,6 +1000,55 @@ service /organization\-provision on provServiceListener {
             return resJson;
         }
         return buildError(502, "Invalid response for invite user");
+    }
+
+    // GET /organization/{orgId}/users
+    resource function get [string orgId]/user(http:Request req) returns json|http:Response {
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_USER_LIST);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_user_mgt_list");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        
+        // Step 3: Make SCIM API call to get users list
+        http:Request scimReq = new;
+        scimReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        scimReq.setHeader("Accept", "application/scim+json");
+        
+        string scimPath = string `/t/${PARENT_ORG_NAME}/o/scim2/Users`;
+        http:Response|error scimRes = mgmtClient->execute("GET", scimPath, scimReq);
+        if scimRes is error {
+            log:printError("Failed to fetch users list", 'error = scimRes, 'orgId = orgId);
+            return buildError(502, "Failed to fetch users list", scimRes.detail());
+        }
+        
+        if scimRes.statusCode < 200 || scimRes.statusCode >= 300 {
+            json? errorDetails = ();
+            var errorJson = scimRes.getJsonPayload();
+            if errorJson is json {
+                errorDetails = errorJson;
+            }
+            log:printError("Fetch users list returned error status", 'statusCode = scimRes.statusCode, 'orgId = orgId, 'details = errorDetails);
+            return buildError(scimRes.statusCode, "Failed to fetch users list", errorDetails);
+        }
+        
+        // Step 4: Parse and filter response
+        var resJson = scimRes.getJsonPayload();
+        if resJson is json {
+            json filteredResponse = filterUserListResponse(resJson);
+            return filteredResponse;
+        }
+        return buildError(502, "Invalid response for users list");
     }
 
     // POST /organization/{orgId}/identity-provider
@@ -1787,6 +1852,63 @@ function addUserToRole(string token, string userId, string roleId) returns http:
     string rolePath = string `/t/${PARENT_ORG_NAME}/o/scim2/v2/Roles/${roleId}`;
     http:Response|error roleRes = mgmtClient->execute("PATCH", rolePath, roleReq);
     return roleRes;
+}
+
+// Filter user list response to include only id, name, emails, and roles
+function filterUserListResponse(json scimResponse) returns json {
+    json[] filteredUsers = [];
+    map<json> responseMap = {};
+    
+    // Copy top-level metadata
+    if scimResponse is map<json> {
+        if scimResponse["totalResults"] is json {
+            responseMap["totalResults"] = scimResponse["totalResults"];
+        }
+        if scimResponse["startIndex"] is json {
+            responseMap["startIndex"] = scimResponse["startIndex"];
+        }
+        if scimResponse["itemsPerPage"] is json {
+            responseMap["itemsPerPage"] = scimResponse["itemsPerPage"];
+        }
+        if scimResponse["schemas"] is json {
+            responseMap["schemas"] = scimResponse["schemas"];
+        }
+        
+        // Filter Resources array
+        json? resources = scimResponse["Resources"];
+        if resources is json[] {
+            foreach var userItem in resources {
+                if userItem is map<json> {
+                    map<json> filteredUser = {};
+                    
+                    // Extract id
+                    if userItem["id"] is json {
+                        filteredUser["id"] = userItem["id"];
+                    }
+                    
+                    // Extract name
+                    if userItem["name"] is json {
+                        filteredUser["name"] = userItem["name"];
+                    }
+                    
+                    // Extract emails
+                    if userItem["emails"] is json {
+                        filteredUser["emails"] = userItem["emails"];
+                    }
+                    
+                    // Extract roles
+                    if userItem["roles"] is json {
+                        filteredUser["roles"] = userItem["roles"];
+                    }
+                    
+                    filteredUsers.push(filteredUser);
+                }
+            }
+        }
+        responseMap["Resources"] = filteredUsers;
+    }
+    
+    return responseMap;
 }
 
 function buildError(int status, string message, any|error? details = ()) returns http:Response {
