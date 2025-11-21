@@ -63,6 +63,7 @@ const SCOPE_ORG_USER_CREATE = "internal_org_user_mgt_create";
 const SCOPE_ORG_USER_LIST = "internal_org_user_mgt_list";
 const SCOPE_ORG_IDP_CREATE = "internal_org_idp_create";
 const SCOPE_ORG_IDP_VIEW = "internal_org_idp_view";
+const SCOPE_ORG_IDP_UPDATE = "internal_org_idp_update";
 
 
 type InviteUserRequest record {|
@@ -78,6 +79,17 @@ type CreateIdentityProviderRequest record {|
     string oauth2TokenEPUrl;
     string name?;
     string description?;
+|};
+
+type PatchIdentityProviderRequest record {|
+    string jwksUri?;
+    string clientId?;
+    string clientSecret?;
+    string oauth2AuthzEPUrl?;
+    string oauth2TokenEPUrl?;
+    string name?;
+    string description?;
+    string homeRealmIdentifier?;
 |};
 
 // Helper function to simplify IDP response to match CreateIdentityProviderRequest structure
@@ -185,6 +197,213 @@ function fetchIdpFromSelfLink(json idpJson, string switchedToken, http:Client mg
         }
     }
     return ();
+}
+
+// Helper function to build patch operations from simplified request and current IDP
+function buildIdpPatchOperations(PatchIdentityProviderRequest request, json currentIdp) returns json[] {
+    json[] operations = [];
+    
+    if currentIdp !is map<json> {
+        return operations;
+    }
+    map<json> current = <map<json>>currentIdp;
+    
+    // Handle name
+    if request.name is string {
+        string? currentName = current["name"] is string ? <string>current["name"] : ();
+        if currentName is () || currentName != request.name {
+            operations.push({
+                operation: "REPLACE",
+                path: "/name",
+                value: request.name
+            });
+        }
+    }
+    
+    // Handle description
+    if request.description is string {
+        string? currentDesc = current["description"] is string ? <string>current["description"] : ();
+        if currentDesc is () || currentDesc != request.description {
+            operations.push({
+                operation: "REPLACE",
+                path: "/description",
+                value: request.description
+            });
+        }
+    }
+    
+    // Handle homeRealmIdentifier
+    if request.homeRealmIdentifier is string {
+        string? currentHomeRealm = current["homeRealmIdentifier"] is string ? <string>current["homeRealmIdentifier"] : ();
+        if currentHomeRealm is () || currentHomeRealm != request.homeRealmIdentifier {
+            operations.push({
+                operation: "REPLACE",
+                path: "/homeRealmIdentifier",
+                value: request.homeRealmIdentifier
+            });
+        }
+    }
+    
+    // Handle jwksUri (nested in certificate)
+    if request.jwksUri is string {
+        json? cert = current["certificate"];
+        string? currentJwksUri = ();
+        if cert is map<json> {
+            currentJwksUri = cert["jwksUri"] is string ? <string>cert["jwksUri"] : ();
+        }
+        if currentJwksUri is () || currentJwksUri != request.jwksUri {
+            operations.push({
+                operation: "REPLACE",
+                path: "/certificate/jwksUri",
+                value: request.jwksUri
+            });
+        }
+    }
+    
+    // Handle OAuth properties (nested in federatedAuthenticators.authenticators[0].properties)
+    json? fedAuths = current["federatedAuthenticators"];
+    if fedAuths is map<json> {
+        json? authenticators = fedAuths["authenticators"];
+        if authenticators is json[] && authenticators.length() > 0 {
+            json? firstAuth = authenticators[0];
+            if firstAuth is map<json> {
+                json? properties = firstAuth["properties"];
+                if properties is json[] {
+                    // Find and update properties
+                    json[] updatedProperties = [];
+                    boolean clientIdUpdated = false;
+                    boolean clientSecretUpdated = false;
+                    boolean oauth2AuthzEPUrlUpdated = false;
+                    boolean oauth2TokenEPUrlUpdated = false;
+                    
+                    // First, copy existing properties and update if needed
+                    foreach var prop in properties {
+                        if prop is map<json> {
+                            string? key = prop["key"] is string ? <string>prop["key"] : ();
+                            json? value = prop["value"];
+                            
+                            if key is string {
+                                boolean shouldUpdate = false;
+                                json? newValue = ();
+                                
+                                if key == "ClientId" && request.clientId is string {
+                                    if value is string && value != request.clientId {
+                                        shouldUpdate = true;
+                                        newValue = request.clientId;
+                                    } else if value is () {
+                                        shouldUpdate = true;
+                                        newValue = request.clientId;
+                                    }
+                                    clientIdUpdated = true;
+                                } else if key == "ClientSecret" && request.clientSecret is string {
+                                    if value is string && value != request.clientSecret {
+                                        shouldUpdate = true;
+                                        newValue = request.clientSecret;
+                                    } else if value is () {
+                                        shouldUpdate = true;
+                                        newValue = request.clientSecret;
+                                    }
+                                    clientSecretUpdated = true;
+                                } else if key == "OAuth2AuthzEPUrl" && request.oauth2AuthzEPUrl is string {
+                                    if value is string && value != request.oauth2AuthzEPUrl {
+                                        shouldUpdate = true;
+                                        newValue = request.oauth2AuthzEPUrl;
+                                    } else if value is () {
+                                        shouldUpdate = true;
+                                        newValue = request.oauth2AuthzEPUrl;
+                                    }
+                                    oauth2AuthzEPUrlUpdated = true;
+                                } else if key == "OAuth2TokenEPUrl" && request.oauth2TokenEPUrl is string {
+                                    if value is string && value != request.oauth2TokenEPUrl {
+                                        shouldUpdate = true;
+                                        newValue = request.oauth2TokenEPUrl;
+                                    } else if value is () {
+                                        shouldUpdate = true;
+                                        newValue = request.oauth2TokenEPUrl;
+                                    }
+                                    oauth2TokenEPUrlUpdated = true;
+                                }
+                                
+                                if shouldUpdate && newValue is json {
+                                    updatedProperties.push({
+                                        key: key,
+                                        value: newValue
+                                    });
+                                } else {
+                                    updatedProperties.push(prop);
+                                }
+                            } else {
+                                updatedProperties.push(prop);
+                            }
+                        } else {
+                            updatedProperties.push(prop);
+                        }
+                    }
+                    
+                    // Add new properties if they don't exist
+                    if request.clientId is string && !clientIdUpdated {
+                        updatedProperties.push({
+                            key: "ClientId",
+                            value: request.clientId
+                        });
+                    }
+                    if request.clientSecret is string && !clientSecretUpdated {
+                        updatedProperties.push({
+                            key: "ClientSecret",
+                            value: request.clientSecret
+                        });
+                    }
+                    if request.oauth2AuthzEPUrl is string && !oauth2AuthzEPUrlUpdated {
+                        updatedProperties.push({
+                            key: "OAuth2AuthzEPUrl",
+                            value: request.oauth2AuthzEPUrl
+                        });
+                    }
+                    if request.oauth2TokenEPUrl is string && !oauth2TokenEPUrlUpdated {
+                        updatedProperties.push({
+                            key: "OAuth2TokenEPUrl",
+                            value: request.oauth2TokenEPUrl
+                        });
+                    }
+                    
+                    // Only add operation if properties changed
+                    boolean propertiesChanged = false;
+                    if updatedProperties.length() != properties.length() {
+                        propertiesChanged = true;
+                    } else {
+                        // Check if any values changed
+                        int i = 0;
+                        while i < properties.length() {
+                            json? oldProp = properties[i];
+                            json? newProp = updatedProperties[i];
+                            if oldProp is map<json> && newProp is map<json> {
+                                json? oldValue = oldProp["value"];
+                                json? newValue = newProp["value"];
+                                if oldValue is string && newValue is string && oldValue != newValue {
+                                    propertiesChanged = true;
+                                    break;
+                                } else if oldValue is () && newValue is json {
+                                    propertiesChanged = true;
+                                    break;
+                                }
+                            }
+                            i = i + 1;
+                        }
+                    }
+                    
+                    if propertiesChanged {
+                        operations.push({
+                            operation: "REPLACE",
+                            path: "/federatedAuthenticators/authenticators[0]/properties",
+                            value: updatedProperties
+                        });
+                    }
+                }
+            }
+        }
+    }
+    
+    return operations;
 }
 
 service /organization\-provision on provServiceListener {
@@ -1194,6 +1413,8 @@ service /organization\-provision on provServiceListener {
         return buildError(502, "Invalid response for create identity provider");
     }
 
+    
+
     // GET /organization/{orgId}/identity-provider
     resource function get [string orgId]/identity\-provider(http:Request req) returns json|http:Response {
         // Step 1: extract access token from request
@@ -1306,6 +1527,95 @@ service /organization\-provision on provServiceListener {
             }
         }
         return buildError(502, "Invalid response for get identity provider");
+    }
+
+    // PATCH /organization/{orgId}/identity-provider/{idpId}
+    resource function patch [string orgId]/identity\-provider/[string idpId](http:Request req, @http:Payload PatchIdentityProviderRequest body) returns json|http:Response {
+        // Step 1: extract access token from request
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORG_IDP_UPDATE);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: exchange token for target organization using organization_switch grant
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_idp_update");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        
+        // Step 3: Fetch current IDP to understand its structure
+        http:Request getReq = new;
+        getReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        
+        string getPath = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/identity-providers/${idpId}`;
+        http:Response|error getRes = mgmtClient->execute("GET", getPath, getReq);
+        if getRes is error {
+            log:printError("Get identity provider failed", 'error = getRes);
+            return buildError(502, "Failed to fetch identity provider", getRes.detail());
+        }
+        
+        if getRes.statusCode < 200 || getRes.statusCode >= 300 {
+            json? errorDetails = ();
+            var errorJson = getRes.getJsonPayload();
+            if errorJson is json {
+                errorDetails = errorJson;
+            }
+            log:printError("Get identity provider returned error status", 'statusCode = getRes.statusCode, 'idpId = idpId, 'details = errorDetails);
+            return buildError(getRes.statusCode, "Failed to fetch identity provider", errorDetails);
+        }
+        
+        var currentIdpJson = getRes.getJsonPayload();
+        if currentIdpJson !is json || currentIdpJson !is map<json> {
+            return buildError(502, "Invalid response for get identity provider");
+        }
+        
+        // Fetch full IDP details from self link if available to ensure we have all properties
+        json? fullIdp = fetchIdpFromSelfLink(<json>currentIdpJson, switchedToken, mgmtClient);
+        json currentIdp = fullIdp is json ? fullIdp : <json>currentIdpJson;
+        
+        // Step 4: Build patch operations from simplified request
+        json[] patchOperations = buildIdpPatchOperations(body, currentIdp);
+        
+        if patchOperations.length() == 0 {
+            return buildError(400, "No fields to update");
+        }
+        
+        // Step 5: Execute PATCH request
+        http:Request patchReq = new;
+        patchReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        patchReq.setHeader("Content-Type", "application/json");
+        patchReq.setJsonPayload(patchOperations);
+        
+        string patchPath = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/identity-providers/${idpId}`;
+        http:Response|error patchRes = mgmtClient->execute("PATCH", patchPath, patchReq);
+        if patchRes is error {
+            log:printError("Patch identity provider failed", 'error = patchRes, 'orgId = orgId, 'idpId = idpId);
+            return buildError(502, "Failed to patch identity provider", patchRes.detail());
+        }
+        
+        if patchRes.statusCode < 200 || patchRes.statusCode >= 300 {
+            json? errorDetails = ();
+            var errorJson = patchRes.getJsonPayload();
+            if errorJson is json {
+                errorDetails = errorJson;
+            }
+            log:printError("Patch identity provider returned error status", 'statusCode = patchRes.statusCode, 'orgId = orgId, 'idpId = idpId, 'details = errorDetails);
+            return buildError(patchRes.statusCode, "Failed to patch identity provider", errorDetails);
+        }
+        
+        // Step 6: Return simplified response
+        var resJson = patchRes.getJsonPayload();
+        if resJson is json {
+            json? simplified = simplifyIdpResponse(resJson, switchedToken, mgmtClient);
+            if simplified is json {
+                return simplified;
+            }
+        }
+        return buildError(502, "Invalid response for patch identity provider");
     }
 
 }
@@ -1507,7 +1817,7 @@ function getAccessToken() returns string|error {
         "internal_branding_preference_update internal_org_branding_preference_update " +
         "internal_shared_application_create internal_shared_application_view internal_shared_application_delete " +
         "internal_user_unshare internal_user_shared_access_view internal_user_share " +
-        "internal_org_idp_create internal_org_idp_view";
+        "internal_org_idp_create internal_org_idp_view internal_org_idp_update";
     string body = string `grant_type=client_credentials&client_id=${ASGARDEO_CLIENT_ID}&scope=${scope}`;
     req.setTextPayload(body);
 
