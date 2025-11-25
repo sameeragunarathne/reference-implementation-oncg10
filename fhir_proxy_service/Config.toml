@@ -1,7 +1,0 @@
-fhirServerUrl = "http://fhir-service-3528681385:9090/"
-orgResolverServiceUrl = "http://org-resolver-service-1859390505:8090/resolver/orgs"
-proxyServerPort = 9090
-publicEndpoints = ["fhir/r4/Practitioner/1"]
-
-[ballerina.log]
-level = "DEBUG"
