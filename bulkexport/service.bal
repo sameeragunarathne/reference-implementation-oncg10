@@ -31,7 +31,7 @@ service /bulk on new http:Listener(8090) {
         }
         addExportTasktoMemory(exportTaskId, time:utcNow());
 
-        string contentLocation = exportServiceConfig.baseUrl + "/fhir/bulkstatus/" + exportTaskId;
+        string contentLocation = exportServiceConfig.baseUrl + "/bulkstatus/" + exportTaskId;
 
         http:Response response = new ();
         response.setPayload(createOpereationOutcome("information", "processing",

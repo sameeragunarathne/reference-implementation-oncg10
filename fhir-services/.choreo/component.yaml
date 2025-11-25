@@ -1,142 +1,28 @@
-schemaVersion: 1.1
+# Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
+
+# WSO2 LLC. licenses this file to you under the Apache License,
+# Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License.
+# You may obtain a copy of the License at
+
+# http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+schemaVersion: 1.2
 endpoints:
-    - name: uscore311-allergyintolerance-api
-      displayName: uscore311 AllergyIntolerance API
-      service:
-        basePath: /fhir/r4/AllergyIntolerance
-        port: 9090
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/AllergyIntolerance.yaml
-    - name: uscore311-careplan-api
-      displayName: uscore311 CarePlan API
-      service:
-        basePath: /fhir/r4/CarePlan
-        port: 9091
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/CarePlan.yaml
-    - name: uscore311-careteam-api
-      displayName: uscore311 CareTeam API
-      service:
-        basePath: /fhir/r4/CareTeam
-        port: 9092
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/CareTeam.yaml
-    - name: uscore311-condition-api
-      displayName: uscore311 Condition API
-      service:
-        basePath: /fhir/r4/Condition
-        port: 9093
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Condition.yaml
-    - name: uscore311-device-api
-      displayName: uscore311 Device API
-      service:
-        basePath: /fhir/r4/Device
-        port: 9094
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Device.yaml
-    - name: uscore311-diagnosticreport-api
-      displayName: uscore311 DiagnosticReport API
-      service:
-        basePath: /fhir/r4/DiagnosticReport
-        port: 9095
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/DiagnosticReport.yaml
-    - name: uscore311-documentreference-api
-      displayName: uscore311 DocumentReference API
-      service:
-        basePath: /fhir/r4/DocumentReference
-        port: 9096
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/DocumentReference.yaml
-    - name: uscore311-encounter-api
-      displayName: uscore311 Encounter API
-      service:
-        basePath: /fhir/r4/Encounter
-        port: 9097
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Encounter.yaml
-    - name: uscore311-goal-api
-      displayName: uscore311 Goal API
-      service:
-        basePath: /fhir/r4/Goal
-        port: 9098
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Goal.yaml
-    - name: uscore311-patient-api
-      displayName: uscore311 Patient API
-      service:
-        basePath: /fhir/r4/Patient
-        port: 9099
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Patient.yaml
-    - name: uscore311-practitioner-api
-      displayName: uscore311 Practitioner API
-      service:
-        basePath: /fhir/r4/Practitioner
-        port: 9100
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Practitioner.yaml
-    - name: uscore311-procedure-api
-      displayName: uscore311 Procedure API
-      service:
-        basePath: /fhir/r4/Procedure
-        port: 9101
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Procedure.yaml
-    - name: uscore311-provenance-api
-      displayName: uscore311 Provenance API
-      service:
-        basePath: /fhir/r4/Provenance
-        port: 9102
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/Provenance.yaml
-    - name: metadata-api
-      displayName: Metadata API
-      service:
-        basePath: /fhir/r4/metadata
-        port: 9200
-      type: REST
-      networkVisibilities:
-        - Project
-        - Public
-      schemaFilePath: oas/capability_statement.yaml
+  - name: fhir-service-g10
+    displayName: FHIR Service
+    service:
+      basePath: /
+      port: 9090
+    type: REST
+    networkVisibilities:
+      - Project
+      - Public
+    schemaFilePath: oas/OpenAPI.yaml

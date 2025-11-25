@@ -193,14 +193,14 @@ isolated function populateCapabilityStatementRestSecurity() returns internationa
 
 isolated function populateSecurityExtensions(r4:Extension[] extensions, string extensionUrl, string? endpointOpenid, string? configEndpoint) {
     string? endpoint = ();
-    if endpointOpenid is string {
-        endpoint = endpointOpenid;
+    if configEndpoint is string {
+        log:printDebug(string `Configured value set: ${extensionUrl}`);
+        endpoint = configEndpoint;
     } else {
-        log:printDebug(string `${VALUE_NOT_FOUND}: ${extensionUrl} in Openid configuration`);
-        if configEndpoint is string {
-            endpoint = configEndpoint;
+        if endpointOpenid is string {
+            endpoint = endpointOpenid;
         } else {
-            log:printDebug(string `${VALUE_NOT_FOUND}: ${extensionUrl}`);
+            log:printDebug(string `${VALUE_NOT_FOUND}: ${extensionUrl} in Openid configuration`);
         }
     }
 

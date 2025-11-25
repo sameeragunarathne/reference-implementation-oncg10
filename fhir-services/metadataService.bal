@@ -23,8 +23,7 @@ import ballerinax/health.fhirr4;
 final readonly & international401:CapabilityStatement capabilityStatement = check generateCapabilityStatement().cloneReadOnly();
 
 # The service representing well known API
-# Bound to port defined by configs
-service / on new fhirr4:Listener(9200, metadataApiConfig) {
+service /fhir/r4/metadata on new fhirr4:Listener(config = metadataApiConfig) {
 
     # The capability statement is a key part of the overall conformance framework in FHIR. It is used as a statement of the
     # features of actual software, or of a set of rules for an application to provide. This statement connects to all the
@@ -32,7 +31,7 @@ service / on new fhirr4:Listener(9200, metadataApiConfig) {
     # capability may be used for system compatibility testing, code generation, or as the basis for a conformance assessment.
     # For further information https://hl7.org/fhir/capabilitystatement.html
     # + return - capability statement as a json
-    isolated resource function get fhir/r4/metadata(r4:FHIRContext fhirContext) returns international401:CapabilityStatement|r4:OperationOutcome {
+    isolated resource function get .(r4:FHIRContext fhirContext) returns international401:CapabilityStatement|r4:OperationOutcome {
         international401:CapabilityStatement|error response = capabilityStatement;
         if response is international401:CapabilityStatement {
             log:printDebug("Capability statement served successfully.");

@@ -135,7 +135,7 @@ public class FileCreateTask {
         }
 
         OutputFile result = {
-            url: self.serverConfig.baseUrl + "/fhir/" + self.exportTaskId + "/bulkfiles/" + recordType + ".ndjson",
+            url: self.serverConfig.baseUrl + "/" + self.exportTaskId + "/bulkfiles/" + recordType + ".ndjson",
             count: content.length(),
             'type: recordType
         };
@@ -158,7 +158,7 @@ public class FileCreateTask {
         }
 
         OutputFile result = {
-            url: self.serverConfig.baseUrl + "/fhir/" + self.exportTaskId + "/bulkfiles/error_file.ndjson",
+            url: self.serverConfig.baseUrl + "/" + self.exportTaskId + "/bulkfiles/error_file.ndjson",
             count: self.errors.length(),
             'type: "OperationOutcome"
         };

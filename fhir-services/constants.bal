@@ -14,13 +14,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/http;
-
-configurable string backendBaseUrl = "http://localhost:9300/backend";
-configurable string fhirBaseUrl = "localhost:9102/fhir/r4";
-final http:Client fhirApiClient = check new (fhirBaseUrl);
-final http:Client backendClient = check new (backendBaseUrl);
-
 public const CAPABILITY_STATEMENT = "CapabilityStatement";
 public const OPERATION_OUTCOME = "OperationOutcome";
 public const REST_MODE_SERVER = "server";

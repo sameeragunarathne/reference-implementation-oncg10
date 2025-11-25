@@ -23,7 +23,6 @@
 import ballerina/http;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import ballerinax/health.fhir.r4.parser as fhirParser;
 import ballerinax/health.fhir.r4.uscore311;
 
 # Generic type to wrap all implemented profiles.
@@ -32,133 +31,31 @@ import ballerinax/health.fhir.r4.uscore311;
 public type Provenance uscore311:USCoreProvenance;
 
 # A service representing a network-accessible API
-# bound to port `9102`.
-service /fhir/r4 on new fhirr4:Listener(9102, provenanceApiConfig) {
+service /fhir/r4/Provenance on new fhirr4:Listener(config = provenanceApiConfig) {
 
     // Read the current state of single resource based on its id.
-    isolated resource function get Provenance/[string id](r4:FHIRContext fhirContext) returns Provenance|r4:OperationOutcome|r4:FHIRError|error {
+    isolated resource function get [string id](r4:FHIRContext fhirContext) returns Provenance|r4:OperationOutcome|r4:FHIRError|error {
+        anydata|r4:OperationOutcome|r4:FHIRError|error result;
         lock {
-            json[] data = check retrieveData("Provenance").ensureType();
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if (fhirResource.resourceType == "Provenance" && fhirResource.id == id) {
-                    Provenance encounter = check fhirParser:parse(fhirResource, uscore311:USCoreProvenance).ensureType();
-                    return encounter.clone();
-                }
-            }
+            result = fetchResourceById(fhirContext, "Provenance", id, uscore311:USCoreProvenance);
         }
-        return r4:createFHIRError("Not found", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_FOUND);
-    }
-
-    // Read the state of a specific version of a resource based on its id.
-    isolated resource function get Provenance/[string id]/_history/[string vid](r4:FHIRContext fhirContext) returns Provenance|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
+        if result is Provenance {
+            return result;
+        }
+        if result is r4:OperationOutcome|r4:FHIRError|error {
+            return result;
+        }
+        return r4:createFHIRError("Unexpected resource type returned from FHIR server", r4:ERROR, r4:PROCESSING,
+            httpStatusCode = http:STATUS_INTERNAL_SERVER_ERROR);
     }
 
     // Search for resources based on a set of criteria.
-    isolated resource function get Provenance(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
-
-        return check filterProvenanceData(fhirContext);
-    }
-
-    // Create a new resource.
-    isolated resource function post Provenance(r4:FHIRContext fhirContext, Provenance procedure) returns Provenance|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Update the current state of a resource completely.
-    isolated resource function put Provenance/[string id](r4:FHIRContext fhirContext, Provenance provenance) returns Provenance|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Update the current state of a resource partially.
-    isolated resource function patch Provenance/[string id](r4:FHIRContext fhirContext, json patch) returns Provenance|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Delete a resource.
-    isolated resource function delete Provenance/[string id](r4:FHIRContext fhirContext) returns r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Retrieve the update history for a particular resource.
-    isolated resource function get Provenance/[string id]/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
-    }
-
-    // Retrieve the update history for all resources.
-    isolated resource function get Provenance/_history(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError {
-        return r4:createFHIRError("Not implemented", r4:ERROR, r4:INFORMATIONAL, httpStatusCode = http:STATUS_NOT_IMPLEMENTED);
+    isolated resource function get .(r4:FHIRContext fhirContext) returns r4:Bundle|r4:OperationOutcome|r4:FHIRError|error {
+        r4:Bundle|r4:OperationOutcome|r4:FHIRError|error searchResult;
+        lock {
+            searchResult = searchResourceBundle(fhirContext, "Provenance");
+        }
+        return searchResult;
     }
 }
 
-isolated function filterProvenanceData(r4:FHIRContext fhirContext) returns r4:FHIRError|r4:Bundle|error {
-    boolean isSearchParamAvailable = false;
-    r4:StringSearchParameter[] idParam = check fhirContext.getStringSearchParameter("_id") ?: [];
-    r4:ReferenceSearchParameter[] targetParam = check fhirContext.getReferenceSearchParameter("target") ?: [];
-
-    string[] ids = [];
-    foreach r4:StringSearchParameter item in idParam {
-        string id = check item.value.ensureType();
-        ids.push(id);
-    }
-    string[] targetIds = [];
-    foreach r4:ReferenceSearchParameter item in targetParam {
-        string targetId = check item.id.ensureType();
-        string targetResourceType = check item.resourceType.ensureType();
-        targetIds.push(targetResourceType + "/" + targetId);
-    }
-
-    lock {
-        r4:Bundle bundle = {identifier: {system: ""}, 'type: "collection", entry: []};
-        r4:BundleEntry bundleEntry = {};
-        int count = 0;
-        json[] data = check retrieveData("Provenance").ensureType();
-        json[] resultSet = data;
-
-        // Filter by id
-        if (ids.length() > 0) {
-            isSearchParamAvailable = true;
-            resultSet = [];
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("id") {
-                    string id = check fhirResource.id.ensureType();
-                    if (ids.indexOf(id) > -1) {
-                        resultSet.push(fhirResource);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        // Filter by target
-        json[] targetFilteredData = [];
-        if (targetIds.length() > 0) {
-            isSearchParamAvailable = true;
-            foreach json val in data {
-                map<json> fhirResource = check val.ensureType();
-                if fhirResource.hasKey("target") {
-                    json[] references = check fhirResource.target.ensureType();
-                    foreach json reference in references {
-                        string ref = check reference.reference.ensureType();
-                        if (targetIds.indexOf(ref) > -1) {
-                            targetFilteredData.push(fhirResource);
-                            continue;
-                        }
-                    }
-                }
-            }
-            resultSet = targetFilteredData;
-        }
-
-        resultSet = isSearchParamAvailable ? resultSet : data;
-        foreach json item in resultSet {
-            bundleEntry = {fullUrl: "", 'resource: item};
-            bundle.entry[count] = bundleEntry;
-            count += 1;
-        }
-
-        return bundle.clone();
-    }
-}
