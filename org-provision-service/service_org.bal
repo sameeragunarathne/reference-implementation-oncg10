@@ -854,14 +854,29 @@ service /organization\-provision on provServiceListener {
                 // Continue even if sharing fails - app was created successfully
             } else if shareRes.statusCode >= 200 && shareRes.statusCode < 300 {
                 log:printInfo("Application shared successfully with organization", 'applicationId = applicationId, 'orgId = orgId);
+                
+                // Get org IDP and patch application to assign IDP for login flow
+                string|error idpNameResult = getOrgIdpName(token, orgId);
+                if idpNameResult is error {
+                    log:printWarn("Failed to get org IDP name, skipping authentication sequence update", 'error = idpNameResult, 'applicationId = applicationId, 'orgId = orgId);
+                } else {
+                    string idpName = idpNameResult;
+                    http:Response|error patchRes = patchApplicationAuthenticationSequence(token, applicationId, orgId, idpName);
+                    if patchRes is error {
+                        log:printWarn("Failed to patch application authentication sequence", 'error = patchRes, 'applicationId = applicationId, 'orgId = orgId, 'idpName = idpName);
+                    } else if patchRes.statusCode >= 200 && patchRes.statusCode < 300 {
+                        log:printInfo("Application authentication sequence updated successfully", 'applicationId = applicationId, 'orgId = orgId, 'idpName = idpName);
+                    } else {
+                        log:printWarn("Application authentication sequence update returned non-success status", 'statusCode = patchRes.statusCode, 'applicationId = applicationId, 'orgId = orgId, 'idpName = idpName);
+                    }
+                }
             } else {
                 log:printWarn("Application sharing returned non-success status", 'statusCode = shareRes.statusCode, 'applicationId = applicationId, 'orgId = orgId);
             }
         } else {
             string locationStr = location is string ? location : "";
             log:printWarn("Could not extract application ID from location header, skipping application share", 'location = locationStr);
-        }
-        
+        }   
         return <json>out;
     }
 
@@ -2065,6 +2080,105 @@ function shareApplicationWithOrg(string token, string applicationId, string orgI
     string sharePath = string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/share`;
     http:Response|error shareRes = mgmtClient->post(sharePath, shareReq);
     return shareRes;
+}
+
+// Get the first organization IDP name
+function getOrgIdpName(string token, string orgId) returns string|error {
+    // Switch token for target organization
+    string|error switchedTokenResult = switchOrganizationToken(token, orgId, "internal_org_idp_view");
+    if switchedTokenResult is error {
+        return error("Failed to switch organization token", switchedTokenResult);
+    }
+    string switchedToken = switchedTokenResult;
+    
+    http:Request mgmtReq = new;
+    mgmtReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+    
+    string path = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/identity-providers`;
+    http:Response|error res = mgmtClient->execute("GET", path, mgmtReq);
+    if res is error {
+        return error("Failed to fetch identity providers", res);
+    }
+    
+    if res.statusCode < 200 || res.statusCode >= 300 {
+        return error("Failed to fetch identity providers", statusCode = res.statusCode);
+    }
+    
+    var resJson = res.getJsonPayload();
+    if resJson is json {
+        json[] idps = [];
+        // Handle array response
+        if resJson is json[] {
+            idps = resJson;
+        } else if resJson is map<json> {
+            // Handle object with array (e.g., {"identityProviders": [...]})
+            json? idpsField = resJson["identityProviders"];
+            if idpsField is json[] {
+                idps = idpsField;
+            } else {
+                json? resultsField = resJson["results"];
+                if resultsField is json[] {
+                    idps = resultsField;
+                } else {
+                    json? dataField = resJson["data"];
+                    if dataField is json[] {
+                        idps = dataField;
+                    }
+                }
+            }
+        }
+        
+        // Get the first IDP name
+        if idps.length() > 0 {
+            json firstIdp = idps[0];
+            if firstIdp is map<json> && firstIdp["name"] is string {
+                return <string>firstIdp["name"];
+            }
+        }
+    }
+    
+    return error("No identity providers found or invalid response format");
+}
+
+// Patch application to assign IDP for login flow
+function patchApplicationAuthenticationSequence(string token, string applicationId, string orgId, string idpName) returns http:Response|error {
+    // Switch token for target organization with update scope
+    string|error switchedTokenResult = switchOrganizationToken(token, orgId, "internal_org_application_mgt_update");
+    if switchedTokenResult is error {
+        return error("Failed to switch organization token", switchedTokenResult);
+    }
+    string switchedToken = switchedTokenResult;
+    
+    http:Request patchReq = new;
+    patchReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+    patchReq.setHeader("Content-Type", "application/json");
+    
+    // Build authentication sequence payload
+    json authSequencePayload = {
+        authenticationSequence: {
+            attributeStepId: 1,
+            requestPathAuthenticators: [],
+            steps: [
+                {
+                    id: 1,
+                    options: [
+                        {
+                            authenticator: "OpenIDConnectAuthenticator",
+                            idp: idpName
+                        }
+                    ]
+                }
+            ],
+            subjectStepId: 1,
+            "type": "USER_DEFINED",
+            script: ""
+        }
+    };
+    patchReq.setJsonPayload(authSequencePayload);
+    
+    string patchPath = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications/${applicationId}`;
+    http:Response|error patchRes = mgmtClient->execute("PATCH", patchPath, patchReq);
+    return patchRes;
 }
 
 // Fetch role ID by display name from sub-organization
