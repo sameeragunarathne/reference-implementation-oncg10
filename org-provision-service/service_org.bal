@@ -56,6 +56,7 @@ const SCOPE_APPLICATION_CREATE = "internal_application_mgt_create";
 const SCOPE_ORG_APPLICATION_CREATE = "internal_org_application_mgt_create";
 const SCOPE_ORG_APPLICATION_VIEW = "internal_org_application_mgt_view";
 const SCOPE_APPLICATION_UPDATE = "internal_application_mgt_update";
+const SCOPE_APPLICATION_DELETE = "internal_application_mgt_delete";
 const SCOPE_ORG_APPLICATION_UPDATE = "internal_org_application_mgt_update";
 const SCOPE_BRANDING_UPDATE = "internal_branding_preference_update";
 const SCOPE_ORG_BRANDING_UPDATE = "internal_org_branding_preference_update";
@@ -1007,6 +1008,119 @@ service /organization\-provision on provServiceListener {
         return buildError(502, "Invalid response for update application");
     }
 
+    // DELETE /organization/{orgId}/application/{appId}
+    resource function delete [string orgId]/application/[string appId](http:Request req)
+            returns json|http:Response {
+        // Step 1: Extract access token with DELETE and VIEW scopes
+        // VIEW scope is needed to get the application name from sub-org
+        string[] allowedScopes = [SCOPE_APPLICATION_DELETE, SCOPE_APPLICATION_VIEW];
+        string|http:Response tokenResult = extractAccessTokenWithMultipleScopes(req, allowedScopes);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string parentToken = tokenResult;
+        
+        // Step 2: Get application from sub-org to extract the name
+        string|error switchedTokenResult = switchOrganizationToken(parentToken, orgId,
+            "internal_org_application_mgt_view");
+        if switchedTokenResult is error {
+            log:printError("Failed to switch organization token", 'error = switchedTokenResult);
+            return buildError(502, "Failed to switch organization token", switchedTokenResult.message());
+        }
+        string switchedToken = switchedTokenResult;
+        http:Request getReq = new;
+        getReq.setHeader("Authorization", string `Bearer ${switchedToken}`);
+        
+        http:Response|error getRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications/${appId}`, getReq);
+        if getRes is error {
+            log:printError("Get application failed", 'error = getRes);
+            return buildError(502, "Failed to fetch application", getRes.detail());
+        }
+        
+        // Extract application name from response
+        var appJson = getRes.getJsonPayload();
+        string appName = "";
+        if appJson is map<json> {
+            json? nameAny = appJson["name"];
+            if nameAny is string {
+                appName = nameAny;
+            }
+        }
+        
+        if appName.length() == 0 {
+            return buildError(404, "Application not found or name could not be extracted");
+        }
+        
+        // Step 3: Search for application in parent org using the name
+        http:Request searchReq = new;
+        searchReq.setHeader("Authorization", string `Bearer ${parentToken}`);
+        searchReq.setHeader("accept", "application/json");
+        
+        // URL encode the app name - replace spaces with "+" for filter encoding
+        string encodedAppName = "";
+        int i = 0;
+        while i < appName.length() {
+            string char = appName.substring(i, i + 1);
+            if char == " " {
+                encodedAppName = encodedAppName + "+";
+            } else {
+                encodedAppName = encodedAppName + char;
+            }
+            i = i + 1;
+        }
+        string filterValue = string `name+eq+${encodedAppName}`;
+        string searchPath = string `/t/${PARENT_ORG_NAME}/api/server/v1/applications?filter=${filterValue}&limit=1&offset=0`;
+        http:Response|error searchRes = mgmtClient->execute("GET", searchPath, searchReq);
+        if searchRes is error {
+            log:printError("Search application in parent org failed", 'error = searchRes);
+            return buildError(502, "Failed to search application in parent org", searchRes.detail());
+        }
+        
+        // Extract parent org application ID from search results
+        var searchJson = searchRes.getJsonPayload();
+        string parentAppId = "";
+        if searchJson is map<json> {
+            json? appsAny = searchJson["applications"];
+            if appsAny is json[] && appsAny.length() > 0 {
+                json? firstApp = appsAny[0];
+                if firstApp is map<json> {
+                    json? idAny = firstApp["id"];
+                    if idAny is string {
+                        parentAppId = idAny;
+                    }
+                }
+            }
+        }
+        
+        if parentAppId.length() == 0 {
+            return buildError(404, "Application not found in parent org");
+        }
+        
+        // Step 4: Delete application using parent org app ID
+        http:Request deleteReq = new;
+        deleteReq.setHeader("Authorization", string `Bearer ${parentToken}`);
+        deleteReq.setHeader("accept", "*/*");
+        
+        string deletePath = string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/${parentAppId}`;
+        http:Response|error deleteRes = mgmtClient->execute("DELETE", deletePath, deleteReq);
+        if deleteRes is error {
+            log:printError("Delete application failed", 'error = deleteRes);
+            return buildError(502, "Failed to delete application", deleteRes.detail());
+        }
+        
+        // DELETE typically returns 204 No Content on success
+        if deleteRes.statusCode == 204 {
+            return {};
+        }
+        // If there's a response body, return it
+        var deleteJson = deleteRes.getJsonPayload();
+        if deleteJson is json {
+            return deleteJson;
+        }
+        return {};
+    }
+
+    
     // GET /organization/{orgId}/applications/search?filter=...&limit=...&offset=...
     // Uses organization_switch grant to obtain an access token scoped to the target organization.
     resource function get [string orgId]/application(http:Request req, string? filter, int? limitCount, int? offsetCount)
