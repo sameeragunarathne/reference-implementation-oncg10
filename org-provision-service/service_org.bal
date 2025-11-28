@@ -51,6 +51,7 @@ type CreateApplicationRequest record {|
 const SCOPE_ORGANIZATION_VIEW = "internal_organization_view";
 const SCOPE_ORGANIZATION_CREATE = "internal_organization_create";
 const SCOPE_ORGANIZATION_UPDATE = "internal_organization_update";
+const SCOPE_ORGANIZATION_DELETE = "internal_organization_delete";
 const SCOPE_APPLICATION_VIEW = "internal_application_mgt_view";
 const SCOPE_APPLICATION_CREATE = "internal_application_mgt_create";
 const SCOPE_ORG_APPLICATION_CREATE = "internal_org_application_mgt_create";
@@ -507,6 +508,36 @@ service /organization\-provision on provServiceListener {
             return { "id": id, "name": name, "handle": orgHandle };
         }
         return buildError(502, "Invalid response for organization");
+    }
+
+    // DELETE /organization/{orgId}
+    resource function delete organization/[string orgId](http:Request req) returns json|http:Response {
+        string|http:Response tokenResult = extractAccessToken(req, SCOPE_ORGANIZATION_DELETE);
+        if tokenResult is http:Response {
+            return tokenResult;
+        }
+        string token = tokenResult;
+        http:Request mgmtReq = new;
+        mgmtReq.setHeader("Authorization", string `Bearer ${token}`);
+        mgmtReq.setHeader("Accept", "application/json");
+
+        // Delete organization
+        http:Response|error deleteRes = mgmtClient->execute("DELETE", string `/t/${PARENT_ORG_NAME}/api/server/v1/organizations/${orgId}`, mgmtReq);
+        if deleteRes is error {
+            log:printError("Delete organization failed", 'error = deleteRes);
+            return buildError(502, "Failed to delete organization", deleteRes.detail());
+        }
+        
+        // DELETE typically returns 204 No Content on success
+        if deleteRes.statusCode == 204 {
+            return {};
+        }
+        // If there's a response body, return it
+        var deleteJson = deleteRes.getJsonPayload();
+        if deleteJson is json {
+            return deleteJson;
+        }
+        return {};
     }
 
     // GET /organization/{orgId}/settings
@@ -1940,7 +1971,7 @@ function getAccessToken() returns string|error {
     req.setHeader("Accept", "application/json");
     req.setHeader("Authorization", string `Basic ${getBasicAuth(ASGARDEO_CLIENT_ID, ASGARDEO_CLIENT_SECRET)}`);
     // Scopes from the Postman collection
-    string scope = "internal_organization_create internal_organization_view internal_organization_update " +
+    string scope = "internal_organization_create internal_organization_view internal_organization_update internal_organization_delete " +
         "internal_user_mgt_list internal_user_mgt_view internal_user_mgt_update internal_user_mgt_create internal_org_user_mgt_create internal_org_role_mgt_update " +
         "internal_application_mgt_create internal_application_mgt_delete internal_application_mgt_update internal_application_mgt_view internal_org_application_mgt_create internal_org_application_mgt_view internal_org_application_mgt_update " +
         "internal_branding_preference_update internal_org_branding_preference_update " +
