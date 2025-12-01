@@ -25,11 +25,17 @@ configurable string[] ALLOWED_ROLE_NAMES = [];
 configurable string DEFAULT_AUTHENTICATOR_ID = ?;
 configurable string AUTHENTICATOR_ID = ?;
 configurable string IDP_CALLBACK_URL = "";
+// STS (Security Token Service) configuration for dev portal application creation
+configurable string STS_CLIENT_ID = "";
+configurable string STS_CLIENT_SECRET = "";
+// Keymanager name for mapping OAuth keys in dev portal
+configurable string KEYMANAGER_NAME = "";
 
 // Reuse the listener defined in provisioner.bal (declared there as: listener http:Listener provServiceListener = new (6000);)
 
 final http:Client tokenClient = checkpanic new (string `${ASGARDEO_BASE_URL}/t/${PARENT_ORG_NAME}/oauth2/token`);
 final http:Client mgmtClient = checkpanic new (ASGARDEO_BASE_URL);
+final http:Client stsClient = checkpanic new ("https://sts.choreo.dev");
 
 type OrgErrorPayload record {|
     string 'error;
@@ -858,6 +864,7 @@ service /organization\-provision on provServiceListener {
             log:printError("Create application failed", 'error = res);
             return buildError(502, "Failed to create application", res.detail());
         }
+        
         // Some APIs return payload empty and use Location header; forward headers + status + any body.
         map<json> out = {};
         var bodyJson = res.getJsonPayload();
@@ -876,6 +883,66 @@ service /organization\-provision on provServiceListener {
             // Location format: /t/<PARENT_ORG_NAME>/api/server/v1/applications/<appId>
             // or full URL: https://api.asgardeo.io/t/<PARENT_ORG_NAME>/api/server/v1/applications/<appId>
             applicationId = extractApplicationIdFromLocation(location);
+        }
+        
+        // Extract client ID from Asgardeo application response
+        string? clientId = ();
+        if bodyJson is map<json> {
+            json? clientIdField = bodyJson["clientId"];
+            if clientIdField is string {
+                clientId = clientIdField;
+            }
+        }
+        
+        // If client ID not in response, fetch it from credentials endpoint
+        if clientId is () && applicationId is string {
+            http:Request credsReq = new;
+            credsReq.setHeader("Authorization", string `Bearer ${token}`);
+            http:Response|error credsRes = mgmtClient->execute("GET", string `/t/${PARENT_ORG_NAME}/api/server/v1/applications/${applicationId}/inbound-protocols/oidc`, credsReq);
+            if credsRes is http:Response {
+                var credsJson = credsRes.getJsonPayload();
+                if credsJson is map<json> {
+                    json? credClientId = credsJson["clientId"];
+                    if credClientId is string {
+                        clientId = credClientId;
+                    }
+                }
+            }
+        }
+        
+        // Asgardeo application created successfully - now create application in dev portal and map keys
+        if STS_CLIENT_ID.length() > 0 && STS_CLIENT_SECRET.length() > 0 {
+            string|error devPortalAppIdResult = createDevPortalApplication(body.name, PARENT_ORG_NAME);
+            if devPortalAppIdResult is error {
+                log:printError("Failed to create application in dev portal", 'error = devPortalAppIdResult, 'appName = body.name);
+                return buildError(502, "Failed to create application in dev portal", devPortalAppIdResult.detail());
+            }
+            string devPortalAppId = devPortalAppIdResult;
+            
+            // Map OAuth keys if client ID is available and keymanager is configured
+            if clientId is string && KEYMANAGER_NAME.length() > 0 {
+                error? mapKeysError = mapDevPortalApplicationKeys(devPortalAppId, clientId, PARENT_ORG_NAME);
+                if mapKeysError is error {
+                    log:printError("Failed to map keys for dev portal application", 'error = mapKeysError, 'devPortalAppId = devPortalAppId, 'clientId = clientId, 'orgId = orgId);
+                    return buildError(502, "Failed to map keys for dev portal application", mapKeysError.detail());
+                }
+                
+                // Subscribe to required APIs (fhir-service and bulkexport)
+                error? subscribeError = subscribeDevPortalApplicationToRequiredApis(devPortalAppId, PARENT_ORG_NAME);
+                if subscribeError is error {
+                    log:printError("Failed to subscribe dev portal application to required APIs", 'error = subscribeError, 'devPortalAppId = devPortalAppId, 'orgId = orgId);
+                    return buildError(502, "Failed to subscribe dev portal application to required APIs", subscribeError.detail());
+                }
+            } else {
+                if clientId is () {
+                    log:printWarn("Client ID not found in Asgardeo application response or credentials, skipping key mapping", 'appName = body.name);
+                }
+                if KEYMANAGER_NAME.length() == 0 {
+                    log:printDebug("Keymanager name not configured, skipping key mapping", 'appName = body.name);
+                }
+            }
+        } else {
+            log:printDebug("STS credentials not configured, skipping dev portal application creation", 'appName = body.name);
         }
         
         // Share the application with the organization if application ID was extracted
@@ -2324,6 +2391,336 @@ function patchApplicationAuthenticationSequence(string token, string application
     string patchPath = string `/t/${PARENT_ORG_NAME}/o/api/server/v1/applications/${applicationId}`;
     http:Response|error patchRes = mgmtClient->execute("PATCH", patchPath, patchReq);
     return patchRes;
+}
+
+// Get STS token for dev portal API calls
+function getStsToken(string orgHandle) returns string|error {
+    if STS_CLIENT_ID.length() == 0 || STS_CLIENT_SECRET.length() == 0 {
+        return error("STS client ID or secret not configured");
+    }
+    
+    // Create Basic Auth header: base64 encode(clientId:clientSecret)
+    string credentials = string `${STS_CLIENT_ID}:${STS_CLIENT_SECRET}`;
+    byte[] credentialsBytes = credentials.toBytes();
+    string base64Credentials = credentialsBytes.toBase64();
+    string authHeader = string `Basic ${base64Credentials}`;
+    
+    http:Request tokenReq = new;
+    tokenReq.setHeader("Authorization", authHeader);
+    tokenReq.setHeader("Content-Type", "application/x-www-form-urlencoded");
+    
+    // Build form data
+    string formData = string `grant_type=client_credentials&scope=apim:api_manage apim:admin apim:prod_key_manage apim:subscribe&orgHandle=${orgHandle}`;
+    tokenReq.setPayload(formData);
+    
+    http:Response|error tokenRes = stsClient->post("/oauth2/token", tokenReq);
+    if tokenRes is error {
+        log:printError("Failed to get STS token", 'error = tokenRes, 'orgHandle = orgHandle);
+        return error("Failed to get STS token", tokenRes);
+    }
+    
+    if tokenRes.statusCode < 200 || tokenRes.statusCode >= 300 {
+        json? errorDetails = ();
+        var errorJson = tokenRes.getJsonPayload();
+        if errorJson is json {
+            errorDetails = errorJson;
+        }
+        log:printError("STS token request returned non-success status", 'statusCode = tokenRes.statusCode, 'orgHandle = orgHandle, 'errorDetails = errorDetails);
+        return error(string `STS token request returned status ${tokenRes.statusCode}`, details = errorDetails);
+    }
+    
+    var tokenJsonResult = tokenRes.getJsonPayload();
+    if tokenJsonResult is error {
+        log:printError("Failed to parse STS token response", 'error = tokenJsonResult, 'orgHandle = orgHandle);
+        return error("Failed to parse STS token response", tokenJsonResult);
+    }
+    
+    json? tokenJson = tokenJsonResult;
+    if tokenJson is map<json> {
+        json? accessToken = tokenJson["access_token"];
+        if accessToken is string {
+            return accessToken;
+        }
+    }
+    
+    return error("Invalid STS token response format");
+}
+
+// Create application in dev portal
+function createDevPortalApplication(string appName, string orgHandle) returns string|error {
+    // Get STS token
+    string|error stsTokenResult = getStsToken(orgHandle);
+    if stsTokenResult is error {
+        log:printError("Failed to get STS token for dev portal application creation", 'error = stsTokenResult, 'appName = appName, 'orgHandle = orgHandle);
+        return stsTokenResult;
+    }
+    string stsToken = stsTokenResult;
+    
+    // Create application in dev portal
+    http:Request appReq = new;
+    appReq.setHeader("Authorization", string `Bearer ${stsToken}`);
+    appReq.setHeader("Content-Type", "application/json");
+    
+    json appPayload = {
+        name: appName,
+        throttlingPolicy: "Unlimited",
+        tokenType: "JWT",
+        description: ""
+    };
+    appReq.setJsonPayload(appPayload);
+    
+    string appPath = string `/api/am/devportal/v2/applications/?organizationId=${PARENT_ORG_ID}`;
+    http:Response|error appRes = stsClient->post(appPath, appReq);
+    if appRes is error {
+        log:printError("Failed to create application in dev portal", 'error = appRes, 'appName = appName, 'orgHandle = orgHandle);
+        return error("Failed to create application in dev portal", appRes);
+    }
+    
+    if appRes.statusCode < 200 || appRes.statusCode >= 300 {
+        json? errorDetails = ();
+        var errorJson = appRes.getJsonPayload();
+        if errorJson is json {
+            errorDetails = errorJson;
+        }
+        log:printError("Dev portal application creation returned non-success status", 'statusCode = appRes.statusCode, 'appName = appName, 'orgHandle = orgHandle, 'errorDetails = errorDetails);
+        return error(string `Dev portal application creation returned status ${appRes.statusCode}`, details = errorDetails);
+    }
+    
+    // Extract dev portal application ID from response
+    var appJsonResult = appRes.getJsonPayload();
+    if appJsonResult is error {
+        log:printError("Failed to parse dev portal application response", 'error = appJsonResult, 'appName = appName);
+        return error("Failed to parse dev portal application response", appJsonResult);
+    }
+    
+    json? appJson = appJsonResult;
+    string? devPortalAppId = ();
+    if appJson is map<json> {
+        json? applicationId = appJson["applicationId"];
+        if applicationId is string {
+            devPortalAppId = applicationId;
+        } else {
+            // Try alternative field name
+            json? id = appJson["id"];
+            if id is string {
+                devPortalAppId = id;
+            }
+        }
+    }
+    
+    if devPortalAppId is () {
+        log:printError("Dev portal application ID not found in response", 'appName = appName, 'response = appJson);
+        return error("Dev portal application ID not found in response");
+    }
+    
+    log:printInfo("Successfully created application in dev portal", 'appName = appName, 'orgHandle = orgHandle, 'devPortalAppId = devPortalAppId);
+    return devPortalAppId;
+}
+
+// Map OAuth keys for dev portal application
+function mapDevPortalApplicationKeys(string devPortalAppId, string clientId, string orgHandle) returns error? {
+    if KEYMANAGER_NAME.length() == 0 {
+        return error("Keymanager name not configured");
+    }
+    
+    // Get STS token
+    string|error stsTokenResult = getStsToken(orgHandle);
+    if stsTokenResult is error {
+        log:printError("Failed to get STS token for mapping dev portal application keys", 'error = stsTokenResult, 'devPortalAppId = devPortalAppId, 'orgId = PARENT_ORG_ID);
+        return stsTokenResult;
+    }
+    string stsToken = stsTokenResult;
+    
+    // Map keys
+    http:Request mapReq = new;
+    mapReq.setHeader("Authorization", string `Bearer ${stsToken}`);
+    mapReq.setHeader("Content-Type", "application/json");
+    
+    json mapPayload = {
+        consumerKey: clientId,
+        keyType: "PRODUCTION",
+        keyManager: KEYMANAGER_NAME
+    };
+    mapReq.setJsonPayload(mapPayload);
+    
+    string mapPath = string `/api/am/devportal/v2/applications/${devPortalAppId}/map-keys?organizationId=${PARENT_ORG_ID}`;
+    http:Response|error mapRes = stsClient->post(mapPath, mapReq);
+    if mapRes is error {
+        log:printError("Failed to map keys for dev portal application", 'error = mapRes, 'devPortalAppId = devPortalAppId, 'clientId = clientId, 'orgId = PARENT_ORG_ID);
+        return error("Failed to map keys for dev portal application", mapRes);
+    }
+    
+    if mapRes.statusCode < 200 || mapRes.statusCode >= 300 {
+        json? errorDetails = ();
+        var errorJson = mapRes.getJsonPayload();
+        if errorJson is json {
+            errorDetails = errorJson;
+        }
+        log:printError("Map keys request returned non-success status", 'statusCode = mapRes.statusCode, 'devPortalAppId = devPortalAppId, 'clientId = clientId, 'orgId = PARENT_ORG_ID, 'errorDetails = errorDetails);
+        return error(string `Map keys request returned status ${mapRes.statusCode}`, details = errorDetails);
+    }
+    
+    log:printInfo("Successfully mapped keys for dev portal application", 'devPortalAppId = devPortalAppId, 'clientId = clientId, 'orgId = PARENT_ORG_ID);
+    return ();
+}
+
+// Retrieve APIs from dev portal
+function getDevPortalApis(string orgHandle) returns json[]|error {
+    // Get STS token
+    string|error stsTokenResult = getStsToken(orgHandle);
+    if stsTokenResult is error {
+        log:printError("Failed to get STS token for retrieving APIs", 'error = stsTokenResult);
+        return stsTokenResult;
+    }
+    string stsToken = stsTokenResult;
+    
+    // Retrieve APIs
+    http:Request apisReq = new;
+    apisReq.setHeader("Authorization", string `Bearer ${stsToken}`);
+    
+    string apisPath = string `/api/am/devportal/v2/apis?limit=1000&offset=0&query=&organizationId=${PARENT_ORG_ID}&aggregateBy=majorVersion`;
+    http:Response|error apisRes = stsClient->execute("GET", apisPath, apisReq);
+    if apisRes is error {
+        log:printError("Failed to retrieve APIs from dev portal", 'error = apisRes);
+        return error("Failed to retrieve APIs from dev portal", apisRes);
+    }
+    
+    if apisRes.statusCode < 200 || apisRes.statusCode >= 300 {
+        json? errorDetails = ();
+        var errorJson = apisRes.getJsonPayload();
+        if errorJson is json {
+            errorDetails = errorJson;
+        }
+        log:printError("Retrieve APIs request returned non-success status", 'statusCode = apisRes.statusCode, 'errorDetails = errorDetails);
+        return error(string `Retrieve APIs request returned status ${apisRes.statusCode}`, details = errorDetails);
+    }
+    
+    var apisJsonResult = apisRes.getJsonPayload();
+    if apisJsonResult is error {
+        log:printError("Failed to parse APIs response", 'error = apisJsonResult);
+        return error("Failed to parse APIs response", apisJsonResult);
+    }
+    
+    json? apisJson = apisJsonResult;
+    json[] apiList = [];
+    if apisJson is map<json> {
+        json? listField = apisJson["list"];
+        if listField is json[] {
+            apiList = listField;
+        }
+    }
+    
+    return apiList;
+}
+
+// Find API ID by name (searches in name and displayName fields)
+function findApiIdByName(json[] apiList, string apiName) returns string? {
+    foreach json api in apiList {
+        if api is map<json> {
+            json? name = api["name"];
+            json? displayName = api["displayName"];
+            boolean nameMatches = false;
+            boolean displayNameMatches = false;
+            
+            if name is string {
+                nameMatches = strings:includes(strings:toLowerAscii(name), strings:toLowerAscii(apiName));
+            }
+            if displayName is string {
+                displayNameMatches = strings:includes(strings:toLowerAscii(displayName), strings:toLowerAscii(apiName));
+            }
+            
+            if nameMatches || displayNameMatches {
+                json? id = api["id"];
+                if id is string {
+                    return id;
+                }
+            }
+        }
+    }
+    return ();
+}
+
+// Subscribe dev portal application to an API
+function subscribeDevPortalApplicationToApi(string devPortalAppId, string apiId, string orgId, string orgHandle) returns error? {
+    // Get STS token
+    string|error stsTokenResult = getStsToken(orgHandle);
+    if stsTokenResult is error {
+        log:printError("Failed to get STS token for subscribing to API", 'error = stsTokenResult, 'devPortalAppId = devPortalAppId, 'apiId = apiId);
+        return stsTokenResult;
+    }
+    string stsToken = stsTokenResult;
+    
+    // Subscribe to API
+    http:Request subscribeReq = new;
+    subscribeReq.setHeader("Authorization", string `Bearer ${stsToken}`);
+    subscribeReq.setHeader("Content-Type", "application/json");
+    
+    json subscribePayload = {
+        applicationId: devPortalAppId,
+        apiId: apiId,
+        throttlingPolicy: "Unlimited",
+        versionRange: "v1"
+    };
+    subscribeReq.setJsonPayload(subscribePayload);
+    
+    string subscribePath = string `/api/am/devportal/v2/subscriptions/?organizationId=${orgId}`;
+    http:Response|error subscribeRes = stsClient->post(subscribePath, subscribeReq);
+    if subscribeRes is error {
+        log:printError("Failed to subscribe dev portal application to API", 'error = subscribeRes, 'devPortalAppId = devPortalAppId, 'apiId = apiId, 'orgId = orgId);
+        return error("Failed to subscribe dev portal application to API", subscribeRes);
+    }
+    
+    if subscribeRes.statusCode < 200 || subscribeRes.statusCode >= 300 {
+        json? errorDetails = ();
+        var errorJson = subscribeRes.getJsonPayload();
+        if errorJson is json {
+            errorDetails = errorJson;
+        }
+        log:printError("Subscribe API request returned non-success status", 'statusCode = subscribeRes.statusCode, 'devPortalAppId = devPortalAppId, 'apiId = apiId, 'orgId = orgId, 'errorDetails = errorDetails);
+        return error(string `Subscribe API request returned status ${subscribeRes.statusCode}`, details = errorDetails);
+    }
+    
+    log:printInfo("Successfully subscribed dev portal application to API", 'devPortalAppId = devPortalAppId, 'apiId = apiId, 'orgId = orgId);
+    return ();
+}
+
+// Subscribe dev portal application to required APIs (fhir-service and bulkexport)
+function subscribeDevPortalApplicationToRequiredApis(string devPortalAppId, string orgHandle) returns error? {
+    // Retrieve APIs
+    json[]|error apisResult = getDevPortalApis(orgHandle);
+    if apisResult is error {
+        log:printError("Failed to retrieve APIs for subscription", 'error = apisResult, 'devPortalAppId = devPortalAppId);
+        return apisResult;
+    }
+    json[] apiList = apisResult;
+    
+    // Find API IDs for fhir-service and bulkexport
+    string? fhirServiceApiId = findApiIdByName(apiList, "fhir-service");
+    string? bulkExportApiId = findApiIdByName(apiList, "bulkexport");
+    
+    // Subscribe to fhir-service API if found
+    if fhirServiceApiId is string {
+        error? fhirError = subscribeDevPortalApplicationToApi(devPortalAppId, fhirServiceApiId, PARENT_ORG_ID, orgHandle);
+        if fhirError is error {
+            log:printError("Failed to subscribe to fhir-service API", 'error = fhirError, 'devPortalAppId = devPortalAppId, 'apiId = fhirServiceApiId);
+            return fhirError;
+        }
+    } else {
+        log:printWarn("fhir-service API not found, skipping subscription", 'devPortalAppId = devPortalAppId);
+    }
+    
+    // Subscribe to bulkexport API if found
+    if bulkExportApiId is string {
+        error? bulkError = subscribeDevPortalApplicationToApi(devPortalAppId, bulkExportApiId, PARENT_ORG_ID, orgHandle);
+        if bulkError is error {
+            log:printError("Failed to subscribe to bulkexport API", 'error = bulkError, 'devPortalAppId = devPortalAppId, 'apiId = bulkExportApiId);
+            return bulkError;
+        }
+    } else {
+        log:printWarn("bulkexport API not found, skipping subscription", 'devPortalAppId = devPortalAppId);
+    }
+    
+    return ();
 }
 
 // Fetch role ID by display name from sub-organization
